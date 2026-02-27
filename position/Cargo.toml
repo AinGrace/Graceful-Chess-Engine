@@ -1,0 +1,13 @@
+[package]
+name = "position"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+types = { path = "../types"}
+lookup = { path = "../lookup"}
+arrayvec = "0.7.6"
+
+[dev-dependencies]
+rayon = "1.11.0"
+shakmaty = "0.30.0"
