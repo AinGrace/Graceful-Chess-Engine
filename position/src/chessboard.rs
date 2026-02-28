@@ -56,7 +56,7 @@ impl ChessBoard {
             ..
         }: Fen,
     ) -> Result<Self, PositionError> {
-        let mut pos = Self {
+        let pos = Self {
             board,
             castling_rights,
             turn,

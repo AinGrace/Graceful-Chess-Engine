@@ -2,10 +2,7 @@ use arrayvec::ArrayVec;
 use shakmaty::{Chess, Move as TheirMove, Position, fen::Fen as TheirFen};
 use types::{chess_move::Move, role::Role, square::Square};
 
-use crate::{
-    chessboard::{ChessBoard, InvalidMoveError},
-    fen::Fen,
-};
+use crate::{chessboard::ChessBoard, fen::Fen};
 
 #[derive(Debug, Clone)]
 struct HistoryChessBoard {
@@ -21,13 +18,6 @@ impl HistoryChessBoard {
     fn do_move_inner_checked(&mut self, mv: Move) {
         self.inner.do_move_inner_checked(mv);
         self.history.push(mv);
-    }
-
-    fn do_move(&mut self, mv: Move) -> Result<(), InvalidMoveError> {
-        self.inner.do_move(mv)?;
-        self.history.push(mv);
-
-        Ok(())
     }
 }
 

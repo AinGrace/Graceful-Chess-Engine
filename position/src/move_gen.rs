@@ -20,6 +20,8 @@ pub fn gen_legal_moves(pos: &ChessBoard) -> ArrayVec<Move, 218> {
     let king_checkers = pos.checkers(pos.turn());
     let king_sqr = pos.board().the_king(pos.turn());
 
+    // NOTE an array of roles and corresponding squares
+    // NOTE consider using lighter representation for Move
     let (pinned, pin_rays) = compute_pinned_pieces_of(pos);
 
     if king_checkers.empty() {
@@ -191,7 +193,7 @@ fn gen_evasions(
     gen_ep_evasions(pos, checker, pinned, moves);
 }
 
-// TODO consider calculating via enemy piece attack maps in order to avoid branches
+// NOTE consider calculating via enemy piece attack maps in order to avoid branches
 #[inline(always)]
 fn gen_king_moves(pos: &ChessBoard, king_sqr: Square, moves: &mut ArrayVec<Move, 218>) {
     let board = pos.board();
@@ -202,7 +204,6 @@ fn gen_king_moves(pos: &ChessBoard, king_sqr: Square, moves: &mut ArrayVec<Move,
 
     let attacks = lookup::king_attacks(king_sqr).to_bb();
 
-    // quiet moves
     let quiet = attacks & !friendly & !enemy;
     quiet.for_each(|to| {
         if king_move_is_safe(pos, king_sqr, to) {
@@ -210,7 +211,6 @@ fn gen_king_moves(pos: &ChessBoard, king_sqr: Square, moves: &mut ArrayVec<Move,
         }
     });
 
-    // captures
     let captures = attacks & enemy;
     captures.for_each(|to| {
         if king_move_is_safe(pos, king_sqr, to) {
@@ -504,7 +504,7 @@ fn gen_unpinned_standart_moves(
         ));
     });
 
-    let cap_left_promo = (cap_left & prom_rank);
+    let cap_left_promo = cap_left & prom_rank;
     cap_left_promo.for_each(|cap_promo| {
         let enemy_role = pos.board().peek_role_checked(cap_promo);
 
@@ -794,27 +794,24 @@ pub fn compute_pinned_pieces_of(pos: &ChessBoard) -> (Bitboard, [Bitboard; 64]) 
     let mut pinned = Bitboard::new_empty();
     let mut pin_rays = [u64::MAX.to_bb(); 64];
 
-    let white = Color::White;
-    let black = Color::Black;
+    let us = pos.turn();
+    let them = !us;
 
     let board = pos.board();
 
-    let whites = board.whites();
-    let blacks = board.blacks();
+    let pieces = board.by_color(us);
 
     let occupied = board.occupied();
 
-    // white
+    let king = board.the_king(us);
 
-    let king = board.the_king(white);
-
-    let enemy_rooks = board.rooks(black) | board.queens(black);
-    let enemy_bishops = board.bishops(black) | board.queens(black);
+    let enemy_rooks = board.rooks(them) | board.queens(them);
+    let enemy_bishops = board.bishops(them) | board.queens(them);
 
     compute_pinned(
         &mut pinned,
         &mut pin_rays,
-        whites,
+        pieces,
         occupied,
         lookup::diagonal_rays_from(king).to_bb() & enemy_bishops,
         king,
@@ -823,31 +820,7 @@ pub fn compute_pinned_pieces_of(pos: &ChessBoard) -> (Bitboard, [Bitboard; 64]) 
     compute_pinned(
         &mut pinned,
         &mut pin_rays,
-        whites,
-        occupied,
-        lookup::orthogonal_rays_from(king).to_bb() & enemy_rooks,
-        king,
-    );
-
-    // black
-    let king = board.the_king(black);
-
-    let enemy_rooks = board.rooks(white) | board.queens(white);
-    let enemy_bishops = board.bishops(white) | board.queens(white);
-
-    compute_pinned(
-        &mut pinned,
-        &mut pin_rays,
-        blacks,
-        occupied,
-        lookup::diagonal_rays_from(king).to_bb() & enemy_bishops,
-        king,
-    );
-
-    compute_pinned(
-        &mut pinned,
-        &mut pin_rays,
-        blacks,
+        pieces,
         occupied,
         lookup::orthogonal_rays_from(king).to_bb() & enemy_rooks,
         king,
@@ -866,7 +839,7 @@ fn compute_pinned(
 ) {
     xray.for_each(|attacker| {
         let between = lookup::ray_between(king, attacker).to_bb();
-        let between_inclusive = lookup::ray_between_inclusive(king, attacker).to_bb();
+        let between_inclusive = between | king.to_bb() | attacker.to_bb();
         let blockers = between & occupied;
 
         if let Some(blocker_sqr) = blockers.only_first_square()
