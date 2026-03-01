@@ -31,6 +31,7 @@ impl Square {
 
     /// Will panic if index is >= 64
     #[rustfmt::skip]
+    #[inline(always)]
     pub const fn from_u32_checked(index: u32) -> Self {
         assert!(index < 64);
 
@@ -38,6 +39,7 @@ impl Square {
         unsafe { transmute(index as u8) }
     }
 
+    #[inline(always)]
     pub fn offset(self, by: i32) -> Option<Self> {
         let idx = self as i32 + by;
 
@@ -53,22 +55,27 @@ impl Square {
         self.offset(by).unwrap()
     }
 
+    #[inline(always)]
     pub const fn as_u32(self) -> u32 {
         self as u32
     }
 
+    #[inline(always)]
     pub const fn as_usize(self) -> usize {
         self as usize
     }
 
+    #[inline(always)]
     pub const fn as_mask(self) -> u64 {
         1 << self.as_u32()
     }
 
+    #[inline(always)]
     pub const fn file(self) -> File {
         File::new_checked(self.as_u32() & 7)
     }
 
+    #[inline(always)]
     pub const fn rank(self) -> Rank {
         Rank::new_checked(self.as_u32() >> 3)
     }

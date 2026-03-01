@@ -211,12 +211,17 @@ fn mismatch_test() {
         Square::D5,
         Role::Pawn,
     ));
-    chessboard.do_move_inner_checked(Move::quiet(Role::King, Square::E8, Square::D8));
-    chessboard.do_move_inner_checked(Move::quiet(Role::Knight, Square::E5, Square::C6));
+    chessboard.do_move_inner_checked(Move::capture(
+        Role::Pawn,
+        Square::B4,
+        Square::C3,
+        Role::Knight,
+    ));
+    chessboard.do_move_inner_checked(Move::quiet(Role::Knight, Square::E5, Square::D3));
 
     dbg!(&chessboard);
     let moves = chessboard.legal_moves();
-    dbg!(moves);
+    // dbg!(moves);
 }
 
 #[test]
