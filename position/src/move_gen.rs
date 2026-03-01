@@ -840,13 +840,106 @@ fn compute_pinned(
     xray.for_each(|attacker| {
         let between = lookup::ray_between(king, attacker).to_bb();
         let between_inclusive = between | king.to_bb() | attacker.to_bb();
-        let blockers = between & occupied;
+        let blockers = (between & occupied) | (us & between);
 
-        if let Some(blocker_sqr) = blockers.only_first_square()
-            && us.is_square_set(blocker_sqr)
-        {
+        if let Some(blocker_sqr) = blockers.only_first_square() {
             *pinned = pinned.set_square(blocker_sqr);
             pin_rays[blocker_sqr.as_usize()] = between_inclusive;
         }
     });
+}
+
+mod pin_info {
+    use std::mem::MaybeUninit;
+
+    use types::{
+        bitboard::{Bitboard, ToBitboard},
+        square::Square,
+    };
+
+    use crate::chessboard::ChessBoard;
+
+    struct PinInfo {
+        pinned_pieces: Bitboard,
+        pin_rays: [MaybeUninit<Bitboard>; 64],
+    }
+
+    impl PinInfo {
+        fn new() -> Self {
+            Self {
+                pinned_pieces: 0_u64.to_bb(),
+                pin_rays: [MaybeUninit::uninit(); 64],
+            }
+        }
+
+        fn push(&mut self, square: Square, ray: Bitboard) {
+            // SAFETY: self.len is always less than 64
+            unsafe {
+                *self.pin_rays.get_unchecked_mut(square.as_usize()) = MaybeUninit::new(ray);
+            }
+
+            self.pinned_pieces = self.pinned_pieces.set_square(square);
+        }
+
+        pub fn ray_of(&self, square: Square) -> Option<Bitboard> {
+            if self.pinned_pieces.is_square_set(square) {
+                return unsafe {
+                    Some(self.pin_rays.get_unchecked(square.as_usize()).assume_init())
+                };
+            }
+
+            None
+        }
+
+        pub fn compute(pos: &ChessBoard) -> Self {
+            let us = pos.turn();
+            let them = !us;
+
+            let board = pos.board();
+            let pieces = board.by_color(us);
+            let occupied = board.occupied();
+            let king = board.the_king(us);
+
+            let enemy_bishops = board.bishops(them) | board.queens(them);
+            let enemy_rooks = board.rooks(them) | board.queens(them);
+
+            let mut pinned_pieces = 0_u64.to_bb();
+            let mut pin_rays = [MaybeUninit::<Bitboard>::uninit(); 64];
+
+            let diagonal_attacks = lookup::diagonal_rays_from(king).to_bb() & enemy_rooks;
+            diagonal_attacks.for_each(|attacker| {
+                let between = lookup::ray_between(king, attacker).to_bb();
+                let between_inclusive = between | king.to_bb() | attacker.to_bb();
+                let blockers = (between & occupied) | (pieces & between);
+
+                if let Some(blocker_sqr) = blockers.only_first_square() {
+                    pinned_pieces = pinned_pieces.set_square(blocker_sqr);
+                    unsafe {
+                        *pin_rays.get_unchecked_mut(blocker_sqr.as_usize()) =
+                            MaybeUninit::new(between_inclusive)
+                    }
+                }
+            });
+
+            let orthogonal_attacks = lookup::orthogonal_rays_from(king).to_bb() & enemy_bishops;
+            orthogonal_attacks.for_each(|attacker| {
+                let between = lookup::ray_between(king, attacker).to_bb();
+                let between_inclusive = between | king.to_bb() | attacker.to_bb();
+                let blockers = (between & occupied) | (pieces & between);
+
+                if let Some(blocker_sqr) = blockers.only_first_square() {
+                    pinned_pieces = pinned_pieces.set_square(blocker_sqr);
+                    unsafe {
+                        *pin_rays.get_unchecked_mut(blocker_sqr.as_usize()) =
+                            MaybeUninit::new(between_inclusive)
+                    }
+                }
+            });
+
+            Self {
+                pinned_pieces,
+                pin_rays: pin_rays,
+            }
+        }
+    }
 }
