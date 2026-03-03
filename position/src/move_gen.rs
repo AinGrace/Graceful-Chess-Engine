@@ -21,7 +21,6 @@ pub fn gen_legal_moves(pos: &ChessBoard) -> ArrayVec<Move, 218> {
     let king_checkers = pos.checkers(pos.turn());
     let king_sqr = pos.board().the_king(pos.turn());
 
-    // NOTE an array of roles and corresponding squares
     let pin_info = PinInfo::compute(pos);
 
     if king_checkers.empty() {
@@ -72,6 +71,7 @@ fn gen_standart_moves(pos: &ChessBoard,  pin_info: &PinInfo, moves: &mut ArrayVe
     );
 
     (pawns & pinned).for_each(|pawn| {
+        // SAFETY: calling this on pinned square is sound
         let pin_ray = unsafe { pin_info.ray_of_unchecked(pawn) };
 
         let restricted_pawn_attacks = pin_ray & lookup::pawn_attacks(us, pawn).to_bb();
@@ -147,6 +147,7 @@ fn gen_standart_moves(pos: &ChessBoard,  pin_info: &PinInfo, moves: &mut ArrayVe
     });
 
     (bishops & pinned).for_each(|from| {
+        // SAFETY: calling this on pinned square is sound
         let pin_ray = unsafe { pin_info.ray_of_unchecked(from) };
 
         let attacks = lookup::bishop_attacks(from, occupied.as_u64()).to_bb() & pin_ray;
@@ -169,6 +170,7 @@ fn gen_standart_moves(pos: &ChessBoard,  pin_info: &PinInfo, moves: &mut ArrayVe
     });
 
     (rooks & pinned).for_each(|from| {
+        // SAFETY: calling this on pinned square is sound
         let pin_ray = unsafe { pin_info.ray_of_unchecked(from) };
 
         let attacks = lookup::rook_attacks(from, occupied.as_u64()).to_bb() & pin_ray;
@@ -191,6 +193,7 @@ fn gen_standart_moves(pos: &ChessBoard,  pin_info: &PinInfo, moves: &mut ArrayVe
     });
 
     (queens & pinned).for_each(|from| {
+        // SAFETY: calling this on pinned square is sound
         let pin_ray = unsafe { pin_info.ray_of_unchecked(from) };
 
         let attacks = lookup::queen_attacks(from, occupied.as_u64()).to_bb() & pin_ray;
@@ -806,7 +809,7 @@ mod pin_info {
         pub unsafe fn ray_of_unchecked(&self, square: Square) -> Bitboard {
             for i in 0..self.len as usize {
                 if unsafe { self.squares.get_unchecked(i).assume_init() } == square {
-                    return unsafe { self.pin_rays[i].assume_init() };
+                    return unsafe { self.pin_rays.get_unchecked(i).assume_init() };
                 }
             }
 
@@ -838,42 +841,30 @@ mod pin_info {
 
             let diagonal_attacks = lookup::diagonal_rays_from(king).to_bb() & enemy_bishops;
             diagonal_attacks.for_each(|attacker| {
-                let between = lookup::ray_between(king, attacker).to_bb();
-                let between_inclusive = between | king.to_bb() | attacker.to_bb();
-                let blockers = (between & occupied) | (pieces & between);
-
-                if let Some(blocker_sqr) = blockers.only_first_square() {
-                    pinned_pieces = pinned_pieces.set_square(blocker_sqr);
-                    unsafe {
-                        pin_rays
-                            .get_unchecked_mut(len as usize)
-                            .write(between_inclusive);
-
-                        squares.get_unchecked_mut(len as usize).write(blocker_sqr);
-                    };
-
-                    len += 1;
-                }
+                do_compute(
+                    pieces,
+                    occupied,
+                    king,
+                    &mut pinned_pieces,
+                    &mut pin_rays,
+                    &mut squares,
+                    &mut len,
+                    attacker,
+                );
             });
 
             let orthogonal_attacks = lookup::orthogonal_rays_from(king).to_bb() & enemy_rooks;
             orthogonal_attacks.for_each(|attacker| {
-                let between = lookup::ray_between(king, attacker).to_bb();
-                let between_inclusive = between | king.to_bb() | attacker.to_bb();
-                let blockers = (between & occupied) | (pieces & between);
-
-                if let Some(blocker_sqr) = blockers.only_first_square() {
-                    pinned_pieces = pinned_pieces.set_square(blocker_sqr);
-                    unsafe {
-                        pin_rays
-                            .get_unchecked_mut(len as usize)
-                            .write(between_inclusive);
-
-                        squares.get_unchecked_mut(len as usize).write(blocker_sqr);
-                    };
-
-                    len += 1;
-                }
+                do_compute(
+                    pieces,
+                    occupied,
+                    king,
+                    &mut pinned_pieces,
+                    &mut pin_rays,
+                    &mut squares,
+                    &mut len,
+                    attacker,
+                );
             });
 
             Self {
@@ -882,6 +873,36 @@ mod pin_info {
                 squares,
                 len,
             }
+        }
+    }
+
+    #[inline(always)]
+    fn do_compute(
+        pieces: Bitboard,
+        occupied: Bitboard,
+        king: Square,
+        pinned_pieces: &mut Bitboard,
+        pin_rays: &mut [MaybeUninit<Bitboard>; 8],
+        squares: &mut [MaybeUninit<Square>; 8],
+        len: &mut u8,
+        attacker: Square,
+    ) {
+        let between = lookup::ray_between(king, attacker).to_bb();
+        let between_inclusive = between | king.to_bb() | attacker.to_bb();
+        let blockers = (between & occupied) | (pieces & between);
+
+        if let Some(blocker_sqr) = blockers.only_first_square() {
+            *pinned_pieces = pinned_pieces.set_square(blocker_sqr);
+            // SAFETY: Max number of pinned pieces is 8, hence len is always between 0 and 8
+            unsafe {
+                pin_rays
+                    .get_unchecked_mut(*len as usize)
+                    .write(between_inclusive);
+
+                squares.get_unchecked_mut(*len as usize).write(blocker_sqr);
+            };
+
+            *len += 1;
         }
     }
 }
