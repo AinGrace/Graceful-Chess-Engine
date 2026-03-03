@@ -36,9 +36,8 @@ pub fn gen_legal_moves(pos: &ChessBoard) -> ArrayVec<Move, 218> {
     moves
 }
 
-#[rustfmt::skip]
 #[inline(always)]
-fn gen_standart_moves(pos: &ChessBoard,  pin_info: &PinInfo, moves: &mut ArrayVec<Move, 218>) {
+fn gen_standart_moves(pos: &ChessBoard, pin_info: &PinInfo, moves: &mut ArrayVec<Move, 218>) {
     let us = pos.turn();
     let them = !us;
 
@@ -62,17 +61,19 @@ fn gen_standart_moves(pos: &ChessBoard,  pin_info: &PinInfo, moves: &mut ArrayVe
     gen_unpinned_standart_moves(
         pos,
         us,
-        pawns   & unpinned,
+        pawns & unpinned,
         knights & unpinned,
         bishops & unpinned,
-        rooks   & unpinned,
-        queens  & unpinned,
+        rooks & unpinned,
+        queens & unpinned,
         moves,
     );
 
+    // Calculate moves for pinned pieces
     (pawns & pinned).for_each(|pawn| {
-        // SAFETY: calling this on pinned square is sound
-        let pin_ray = unsafe { pin_info.ray_of_unchecked(pawn) };
+        let Some(pin_ray) = pin_info.ray_of(pawn) else {
+            return;
+        };
 
         let restricted_pawn_attacks = pin_ray & lookup::pawn_attacks(us, pawn).to_bb();
         restricted_pawn_attacks.for_each(|attk| {
@@ -130,25 +131,22 @@ fn gen_standart_moves(pos: &ChessBoard,  pin_info: &PinInfo, moves: &mut ArrayVe
         let restricted_double_pushes = pin_ray & lookup::pawn_double_pushes(us, pawn).to_bb();
         restricted_double_pushes.for_each(|double_push| {
             let not_occupied = !pos.board().occupied().is_square_set(double_push);
-            let mid_not_occupied = !pos
-                .board()
-                .occupied()
-                .is_square_set(if us == Color::White {
-                    double_push.offset_checked(-8)
-                } else {
-                    double_push.offset_checked(8)
-                });
+            let mid_not_occupied = !pos.board().occupied().is_square_set(if us == Color::White {
+                double_push.offset_checked(-8)
+            } else {
+                double_push.offset_checked(8)
+            });
 
             if not_occupied && mid_not_occupied {
                 moves.push(Move::quiet(Role::Pawn, pawn, double_push));
             }
         });
-        
     });
 
     (bishops & pinned).for_each(|from| {
-        // SAFETY: calling this on pinned square is sound
-        let pin_ray = unsafe { pin_info.ray_of_unchecked(from) };
+        let Some(pin_ray) = pin_info.ray_of(from) else {
+            return;
+        };
 
         let attacks = lookup::bishop_attacks(from, occupied.as_u64()).to_bb() & pin_ray;
 
@@ -170,8 +168,9 @@ fn gen_standart_moves(pos: &ChessBoard,  pin_info: &PinInfo, moves: &mut ArrayVe
     });
 
     (rooks & pinned).for_each(|from| {
-        // SAFETY: calling this on pinned square is sound
-        let pin_ray = unsafe { pin_info.ray_of_unchecked(from) };
+        let Some(pin_ray) = pin_info.ray_of(from) else {
+            return;
+        };
 
         let attacks = lookup::rook_attacks(from, occupied.as_u64()).to_bb() & pin_ray;
 
@@ -193,8 +192,9 @@ fn gen_standart_moves(pos: &ChessBoard,  pin_info: &PinInfo, moves: &mut ArrayVe
     });
 
     (queens & pinned).for_each(|from| {
-        // SAFETY: calling this on pinned square is sound
-        let pin_ray = unsafe { pin_info.ray_of_unchecked(from) };
+        let Some(pin_ray) = pin_info.ray_of(from) else {
+            return;
+        };
 
         let attacks = lookup::queen_attacks(from, occupied.as_u64()).to_bb() & pin_ray;
 
@@ -817,6 +817,16 @@ mod pin_info {
         }
 
         #[inline(always)]
+        pub fn ray_of(&self, square: Square) -> Option<Bitboard> {
+            if self.pinned_pieces.is_square_set(square) {
+                // SAFETY: calling this unsafe function is sound if square is pinned
+                Some(unsafe { self.ray_of_unchecked(square) })
+            } else {
+                None
+            }
+        }
+
+        #[inline(always)]
         pub fn pinned(&self) -> Bitboard {
             self.pinned_pieces
         }
@@ -827,7 +837,6 @@ mod pin_info {
             let them = !us;
 
             let board = pos.board();
-            let pieces = board.by_color(us);
             let occupied = board.occupied();
             let king = board.the_king(us);
 
@@ -842,7 +851,6 @@ mod pin_info {
             let diagonal_attacks = lookup::diagonal_rays_from(king).to_bb() & enemy_bishops;
             diagonal_attacks.for_each(|attacker| {
                 do_compute(
-                    pieces,
                     occupied,
                     king,
                     &mut pinned_pieces,
@@ -856,7 +864,6 @@ mod pin_info {
             let orthogonal_attacks = lookup::orthogonal_rays_from(king).to_bb() & enemy_rooks;
             orthogonal_attacks.for_each(|attacker| {
                 do_compute(
-                    pieces,
                     occupied,
                     king,
                     &mut pinned_pieces,
@@ -878,7 +885,6 @@ mod pin_info {
 
     #[inline(always)]
     fn do_compute(
-        pieces: Bitboard,
         occupied: Bitboard,
         king: Square,
         pinned_pieces: &mut Bitboard,
@@ -889,7 +895,7 @@ mod pin_info {
     ) {
         let between = lookup::ray_between(king, attacker).to_bb();
         let between_inclusive = between | king.to_bb() | attacker.to_bb();
-        let blockers = (between & occupied) | (pieces & between);
+        let blockers = between & occupied;
 
         if let Some(blocker_sqr) = blockers.only_first_square() {
             *pinned_pieces = pinned_pieces.set_square(blocker_sqr);

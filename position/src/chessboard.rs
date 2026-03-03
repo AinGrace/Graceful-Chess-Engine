@@ -8,7 +8,7 @@ use types::{
 
 use crate::{board::Board, fen::Fen, move_gen};
 
-// TODO make richer, return move that is invalid, unchanged chessboard and first reason of invalidity
+// TODO make richer, return move that is invalid, unchanged chessboard
 #[derive(Debug)]
 pub struct InvalidMoveError;
 
