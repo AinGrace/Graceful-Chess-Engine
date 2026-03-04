@@ -17,7 +17,7 @@ pub enum Square {
 }
 
 impl Square {
-    pub const fn of(file: File, rank: Rank) -> Self {
+    pub fn of(file: File, rank: Rank) -> Self {
         Self::from_u32_checked((rank.to_u32() * 8) + file.to_u32())
     }
 
@@ -91,5 +91,16 @@ impl Square {
 impl Display for Square {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}{}", self.file().char(), self.rank().char())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn square_of_test() {
+        let sqr = Square::of(File::D, Rank::Second);
+        dbg!(sqr);
     }
 }

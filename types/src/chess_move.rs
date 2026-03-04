@@ -46,6 +46,7 @@ impl Move {
     }
 
     pub fn castling(castling: CastlingSide) -> Self {
+        // FIXME: castling
         match castling {
             CastlingSide::WShort => Self::Castling {
                 king: Square::E1,

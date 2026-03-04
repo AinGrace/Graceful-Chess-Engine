@@ -20,8 +20,8 @@ impl Rank {
     }
 
     pub fn from_char(chr: char) -> Option<Self> {
-        let idx = chr.into();
-        Self::new(idx)
+        let idx = chr.to_digit(10)?;
+        Self::new(idx - 1)
     }
 
     pub fn char(self) -> char {
