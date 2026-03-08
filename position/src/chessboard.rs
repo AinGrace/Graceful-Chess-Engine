@@ -308,6 +308,7 @@ impl ChessBoard {
         }
     }
 
+    /// utility method used for debugging purposes
     pub fn health_check(&self) -> Result<(), PositionError> {
         let our = self.turn;
         let enemy = !our;
@@ -388,7 +389,7 @@ impl Debug for ChessBoard {
         f.debug_struct("ChessBoard")
             .field("board", &self.board)
             .field("turn", &self.turn)
-            .field("castling_rights", &self.castlings)
+            .field("castlings", &self.castlings)
             .field("ep_square", &self.ep_square)
             .field("half_moves", &self.half_moves)
             .field("full_moves", &self.full_moves)
