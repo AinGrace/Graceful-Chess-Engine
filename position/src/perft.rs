@@ -4,165 +4,6 @@ use types::{chess_move::Move, role::Role, square::Square};
 
 use crate::{chessboard::ChessBoard, fen::Fen};
 
-#[derive(Debug, Clone)]
-struct HistoryChessBoard {
-    inner: ChessBoard,
-    history: Vec<Move>,
-}
-
-impl HistoryChessBoard {
-    fn legal_moves(&self) -> ArrayVec<Move, 218> {
-        self.inner.legal_moves()
-    }
-
-    fn do_move_inner_checked(&mut self, mv: Move) {
-        self.inner.do_move_inner(mv);
-        self.history.push(mv);
-    }
-}
-
-pub fn perft_classic(chessboard: &ChessBoard, dep: u32) -> u64 {
-    let mut nodes = 0;
-
-    if dep == 0 {
-        return 1;
-    }
-
-    let moves = chessboard.legal_moves();
-
-    if dep == 1 {
-        return moves.len() as u64;
-    }
-
-    for mv in moves {
-        let mut board_clone = chessboard.clone();
-        board_clone.do_move_inner(mv);
-        nodes += perft_classic(&board_clone, dep - 1);
-    }
-
-    nodes
-}
-
-pub fn perft(chessboard: &ChessBoard, dep: u32) -> u64 {
-    if dep == 0 {
-        return 1;
-    }
-
-    let moves = chessboard.legal_moves();
-
-    if dep == 1 {
-        return moves.len() as u64;
-    }
-
-    moves
-        .iter()
-        .map(|move_| {
-            let mut board_clone = chessboard.clone();
-            board_clone.do_move_inner(*move_);
-            perft(&board_clone, dep - 1)
-        })
-        .sum()
-}
-
-fn perft_history(chessboard: &HistoryChessBoard, dep: u32) -> u64 {
-    if dep == 0 {
-        return 1;
-    }
-
-    let moves = chessboard.legal_moves();
-
-    if dep == 1 {
-        return moves.len() as u64;
-    }
-
-    moves
-        .iter()
-        .map(|move_| {
-            let mut board_clone = chessboard.clone();
-            if matches!(
-                move_,
-                Move::Standart {
-                    role: Role::Pawn,
-                    from: Square::H2,
-                    to: Square::H1,
-                    capture: Some(Role::Rook),
-                    promotion: Some(Role::Queen)
-                }
-            ) {
-                println!("----------------------");
-                println!("history -> {:#?}", board_clone.history);
-                println!("potential");
-            }
-            let _res = board_clone.do_move_inner_checked(*move_);
-            perft_history(&board_clone, dep - 1)
-        })
-        .sum()
-}
-fn perft_comparing_inner(our: HistoryChessBoard, their: Chess, dep: u32) -> u64 {
-    if dep == 0 {
-        return 1;
-    }
-
-    let our_moves = our.legal_moves();
-    let their_moves = their.legal_moves();
-
-    if our_moves.len() != their_moves.len() {
-        println!("We generated -> {}", our_moves.len());
-        println!("our moves -> {:#?}", our_moves);
-
-        println!("They generated -> {}", their_moves.len());
-        println!("their moves -> {:#?}", their_moves);
-
-        println!("Move history -> {:#?}", our.history);
-
-        println!("OUR board -> {:#?}", our.inner);
-        // println!("THEIR board -> {:#?}", their);
-
-        panic!("Move mismatch");
-    }
-
-    their_moves
-        .iter()
-        .map(|move_| {
-            let mut their_board_clone = their.clone();
-            their_board_clone.play_unchecked(*move_);
-
-            let mut our_board_clone = our.clone();
-            our_board_clone.do_move_inner_checked(translate_move(*move_));
-
-            perft_comparing_inner(our_board_clone, their_board_clone, dep - 1)
-        })
-        .sum()
-}
-
-fn translate_move(their_move: TheirMove) -> Move {
-    match their_move {
-        TheirMove::Normal {
-            role,
-            from,
-            capture,
-            to,
-            promotion,
-        } => Move::Standart {
-            role: Role::new(role.char()).unwrap(),
-            from: Square::from_u32_checked(from.to_u32()),
-            to: Square::from_u32_checked(to.to_u32()),
-            capture: capture.map_or(None, |r| Role::new(r.char())),
-            promotion: promotion.map_or(None, |p| Some(Role::new(p.char()).unwrap())),
-        },
-        TheirMove::EnPassant { from, to } => Move::EnPassant {
-            from: Square::from_u32_checked(from.to_u32()),
-            to: Square::from_u32_checked(to.to_u32()),
-        },
-        TheirMove::Castle { king, rook } => Move::Castling {
-            king: Square::from_u32_checked(king.to_u32()),
-            rook: Square::from_u32_checked(rook.to_u32()),
-        },
-
-        TheirMove::Put { .. } => panic!("IMPOSSIBLE"),
-    }
-}
-
 #[test]
 #[ignore = "to be onvoked manually for debugging"]
 fn perft_comparing() {
@@ -283,7 +124,7 @@ fn perft_custom_position_1() {
     assert_eq!(perft(&chessboard.clone(), 3), 97862);
     assert_eq!(perft(&chessboard.clone(), 4), 4085603);
     assert_eq!(perft(&chessboard.clone(), 5), 193690690);
-    // assert_eq!(perft(&chessboard.clone(), 6), 8031647685);
+    assert_eq!(perft(&chessboard.clone(), 6), 8031647685);
 }
 
 #[test]
@@ -343,4 +184,108 @@ fn perft_custom_position_5() {
     assert_eq!(perft(&chessboard.clone(), 5), 164075551);
     assert_eq!(perft(&chessboard.clone(), 6), 6923051137);
     assert_eq!(perft(&chessboard.clone(), 7), 287188994746);
+}
+
+/// a wrapper around ChessBoard that preserves the move history
+#[derive(Debug, Clone)]
+struct HistoryChessBoard {
+    inner: ChessBoard,
+    history: Vec<Move>,
+}
+
+impl HistoryChessBoard {
+    fn legal_moves(&self) -> ArrayVec<Move, 218> {
+        self.inner.legal_moves()
+    }
+
+    fn do_move_inner_checked(&mut self, mv: Move) {
+        self.inner.do_move_inner(mv);
+        self.history.push(mv);
+    }
+}
+
+pub fn perft(chessboard: &ChessBoard, dep: u32) -> u64 {
+    if dep == 0 {
+        return 1;
+    }
+
+    let moves = chessboard.legal_moves();
+
+    if dep == 1 {
+        return moves.len() as u64;
+    }
+
+    moves
+        .iter()
+        .map(|move_| {
+            let mut board_clone = chessboard.clone();
+            board_clone.do_move_inner(*move_);
+            perft(&board_clone, dep - 1)
+        })
+        .sum()
+}
+
+fn perft_comparing_inner(our: HistoryChessBoard, their: Chess, dep: u32) -> u64 {
+    if dep == 0 {
+        return 1;
+    }
+
+    let our_moves = our.legal_moves();
+    let their_moves = their.legal_moves();
+
+    if our_moves.len() != their_moves.len() {
+        println!("We generated -> {}", our_moves.len());
+        println!("our moves -> {:#?}", our_moves);
+
+        println!("They generated -> {}", their_moves.len());
+        println!("their moves -> {:#?}", their_moves);
+
+        println!("Move history -> {:#?}", our.history);
+
+        println!("OUR board -> {:#?}", our.inner);
+        // println!("THEIR board -> {:#?}", their);
+
+        panic!("Move mismatch");
+    }
+
+    their_moves
+        .iter()
+        .map(|move_| {
+            let mut their_board_clone = their.clone();
+            their_board_clone.play_unchecked(*move_);
+
+            let mut our_board_clone = our.clone();
+            our_board_clone.do_move_inner_checked(translate_move(*move_));
+
+            perft_comparing_inner(our_board_clone, their_board_clone, dep - 1)
+        })
+        .sum()
+}
+
+fn translate_move(their_move: TheirMove) -> Move {
+    match their_move {
+        TheirMove::Normal {
+            role,
+            from,
+            capture,
+            to,
+            promotion,
+        } => Move::Standart {
+            role: Role::new(role.char()).unwrap(),
+            from: Square::from_u32_checked(from.to_u32()),
+            to: Square::from_u32_checked(to.to_u32()),
+            capture: capture.map_or(None, |r| Role::new(r.char())),
+            promotion: promotion.map_or(None, |p| Some(Role::new(p.char()).unwrap())),
+        },
+        TheirMove::EnPassant { from, to } => Move::EnPassant {
+            from: Square::from_u32_checked(from.to_u32()),
+            to: Square::from_u32_checked(to.to_u32()),
+        },
+        TheirMove::Castle { king, rook } => Move::Castling {
+            king: Square::from_u32_checked(king.to_u32()),
+            rook: Square::from_u32_checked(rook.to_u32()),
+        },
+
+        TheirMove::Put { .. } => panic!("IMPOSSIBLE"),
+    }
 }
