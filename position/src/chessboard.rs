@@ -125,6 +125,10 @@ impl ChessBoard {
         self.full_moves.get()
     }
 
+    pub fn zobrist_hash(&self) -> u64 {
+        self.zobrist_hash
+    }
+
     /// Generate and return a list of legal moves for the curent position
     pub fn legal_moves(&self) -> ArrayVec<Move, 218> {
         move_gen::gen_legal_moves(self)
@@ -506,8 +510,7 @@ mod tests {
 
     #[test]
     fn real_game_uci_moves_test() {
-        let mut board = ChessBoard::new();
-        println!("{board:#?}");
+        let board = ChessBoard::new();
 
         board
             .uci_move("d2d4")
@@ -646,6 +649,85 @@ mod tests {
 
         for mv in moves {
             println!("{}", mv.to_uci());
+        }
+    }
+
+    #[test]
+    fn zobrist_test() {
+        let mut board = ChessBoard::new();
+
+        let moves = vec![
+            Move::quiet(Role::Pawn, Square::D2, Square::D4),
+            Move::quiet(Role::Pawn, Square::D7, Square::D5),
+            Move::quiet(Role::Knight, Square::G1, Square::F3),
+            Move::quiet(Role::Knight, Square::B8, Square::C6),
+            Move::quiet(Role::Knight, Square::B1, Square::C3),
+            Move::quiet(Role::Knight, Square::G8, Square::F6),
+            Move::quiet(Role::Pawn, Square::E2, Square::E3),
+            Move::quiet(Role::Pawn, Square::E7, Square::E6),
+            Move::quiet(Role::Pawn, Square::A2, Square::A3),
+            Move::quiet(Role::Pawn, Square::G7, Square::G6),
+            Move::quiet(Role::Bishop, Square::F1, Square::B5),
+            Move::quiet(Role::Pawn, Square::A7, Square::A6),
+            Move::capture(Role::Bishop, Square::B5, Square::C6, Role::Knight),
+            Move::capture(Role::Pawn, Square::B7, Square::C6, Role::Bishop),
+            Move::quiet(Role::Knight, Square::F3, Square::E5),
+            Move::quiet(Role::Queen, Square::D8, Square::D6),
+            Move::quiet(Role::Pawn, Square::F2, Square::F3),
+            Move::quiet(Role::Pawn, Square::C6, Square::C5),
+            Move::castling(CastlingSide::WShort),
+            Move::quiet(Role::Pawn, Square::C5, Square::C4),
+            Move::quiet(Role::Pawn, Square::E3, Square::E4),
+            Move::quiet(Role::Pawn, Square::C7, Square::C6),
+            Move::quiet(Role::Bishop, Square::C1, Square::F4),
+            Move::quiet(Role::Pawn, Square::A6, Square::A5),
+            Move::quiet(Role::Knight, Square::C3, Square::A4),
+            Move::quiet(Role::Knight, Square::F6, Square::H5),
+            Move::quiet(Role::Queen, Square::D1, Square::D2),
+            Move::quiet(Role::Pawn, Square::F7, Square::F5),
+            Move::capture(Role::Pawn, Square::E4, Square::F5, Role::Pawn),
+            Move::capture(Role::Pawn, Square::E6, Square::F5, Role::Pawn),
+            Move::quiet(Role::Rook, Square::F1, Square::E1),
+            Move::quiet(Role::Bishop, Square::C8, Square::D7),
+            Move::capture(Role::Knight, Square::E5, Square::C6, Role::Pawn),
+            Move::quiet(Role::King, Square::E8, Square::F7),
+            Move::capture(Role::Bishop, Square::F4, Square::D6, Role::Queen),
+            Move::capture(Role::Bishop, Square::F8, Square::D6, Role::Bishop),
+            Move::quiet(Role::Knight, Square::C6, Square::E5),
+            Move::quiet(Role::King, Square::F7, Square::G7),
+            Move::capture(Role::Knight, Square::E5, Square::D7, Role::Bishop),
+            Move::quiet(Role::Pawn, Square::H7, Square::H6),
+            Move::quiet(Role::Knight, Square::A4, Square::B6),
+            Move::quiet(Role::Rook, Square::A8, Square::A7),
+            Move::quiet(Role::Knight, Square::D7, Square::C5),
+            Move::quiet(Role::Bishop, Square::D6, Square::F4),
+            Move::quiet(Role::Knight, Square::C5, Square::E6),
+            Move::quiet(Role::King, Square::G7, Square::F6),
+            Move::capture(Role::Knight, Square::E6, Square::F4, Role::Bishop),
+            Move::capture(Role::Knight, Square::H5, Square::F4, Role::Knight),
+            Move::capture(Role::Queen, Square::D2, Square::F4, Role::Knight),
+            Move::quiet(Role::Pawn, Square::G6, Square::G5),
+            Move::quiet(Role::Queen, Square::F4, Square::E5),
+            Move::quiet(Role::King, Square::F6, Square::F7),
+            Move::capture(Role::Queen, Square::E5, Square::H8, Role::Rook),
+            Move::quiet(Role::King, Square::F7, Square::G6),
+            Move::quiet(Role::Pawn, Square::G2, Square::G4),
+            Move::quiet(Role::Rook, Square::A7, Square::H7),
+            Move::capture(Role::Queen, Square::H8, Square::H7, Role::Rook),
+            Move::capture(Role::King, Square::G6, Square::H7, Role::Queen),
+            Move::quiet(Role::Rook, Square::E1, Square::E7),
+            Move::quiet(Role::King, Square::H7, Square::G6),
+            Move::quiet(Role::Rook, Square::A1, Square::E1),
+            Move::quiet(Role::King, Square::G6, Square::F6),
+            Move::quiet(Role::Rook, Square::E1, Square::E6),
+        ];
+
+        for mv in moves {
+            board.do_move_inner(mv);
+            let updated_hash = board.zobrist_hash();
+            let computed_hash = zobrist::compute_hash(&board);
+
+            assert_eq!(updated_hash, computed_hash);
         }
     }
 }

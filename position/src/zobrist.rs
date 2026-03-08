@@ -68,7 +68,7 @@ pub fn compute_hash(pos: &ChessBoard) -> u64 {
     hash ^= ZOBRIST.castlings[pos.castling_rights().as_usize()];
 
     if let Some(ep) = pos.ep_square() {
-        hash ^= ZOBRIST.ep[ep.as_usize()]
+        hash ^= ZOBRIST.ep[ep.file().to_usize()]
     }
 
     if pos.turn() == Color::Black {
@@ -88,7 +88,7 @@ pub fn update_hash(
     new_castling: Castlings,
 ) {
     if let Some(ep) = old_ep {
-        *hash ^= ZOBRIST.ep[ep.as_usize()];
+        *hash ^= ZOBRIST.ep[ep.file().to_usize()];
     }
     *hash ^= ZOBRIST.castlings[old_castling.as_usize()];
 
@@ -141,7 +141,7 @@ pub fn update_hash(
     }
 
     if let Some(ep) = new_ep {
-        *hash ^= ZOBRIST.ep[ep.as_usize()];
+        *hash ^= ZOBRIST.ep[ep.file().to_usize()];
     }
 
     *hash ^= ZOBRIST.castlings[new_castling.as_usize()];
