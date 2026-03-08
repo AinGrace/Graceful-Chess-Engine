@@ -1,4 +1,8 @@
-use std::{f32::MANTISSA_DIGITS, fmt::Debug, num::NonZeroU32};
+use std::{
+    error::Error,
+    fmt::{Debug, Display},
+    num::NonZeroU32,
+};
 
 use arrayvec::ArrayVec;
 use types::{
@@ -8,9 +12,29 @@ use types::{
 
 use crate::{board::Board, fen::Fen, move_gen};
 
-// TODO make richer, return move that is invalid, unchanged chessboard
 #[derive(Debug)]
-pub struct InvalidMoveError;
+pub struct InvalidMoveError {
+    mv: String,
+    board: ChessBoard,
+}
+
+impl Error for InvalidMoveError {}
+
+impl Display for InvalidMoveError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        Debug::fmt(&self, f)
+    }
+}
+
+impl InvalidMoveError {
+    pub fn mv(&self) -> &str {
+        &self.mv
+    }
+
+    pub fn chessboard(&self) -> &ChessBoard {
+        &self.board
+    }
+}
 
 #[derive(Debug)]
 pub enum PositionError {
@@ -119,21 +143,33 @@ impl ChessBoard {
     /// Checks move for legality and then executes it
     ///
     /// consider do_move_inner_checked if you can guarantee validity
-    pub fn do_move(&mut self, mv: Move) -> Result<(), InvalidMoveError> {
+    pub fn do_move(mut self, mv: Move) -> Result<Self, InvalidMoveError> {
         if self.is_legal_move(mv) {
             self.do_move_inner_checked(mv);
-            Ok(())
+            Ok(self)
         } else {
-            Err(InvalidMoveError)
+            // TODO consider using long algebraic notation instead of uci
+            Err(InvalidMoveError {
+                mv: mv.to_uci(),
+                board: self,
+            })
         }
     }
 
-    pub fn uci_move(&mut self, raw_uci: &str) -> Result<(), InvalidMoveError> {
-        let uci_move = self.parse_uci(raw_uci).ok_or(InvalidMoveError)?;
+    pub fn uci_move(mut self, raw_uci: &str) -> Result<Self, InvalidMoveError> {
+        let uci_move = match self.parse_uci(raw_uci) {
+            Some(uci_move) => uci_move,
+            None => {
+                return Err(InvalidMoveError {
+                    mv: raw_uci.into(),
+                    board: self,
+                });
+            }
+        };
 
         self.do_move_inner_checked(uci_move);
 
-        Ok(())
+        Ok(self)
     }
 
     pub fn parse_uci(&self, raw_uci: &str) -> Option<Move> {
@@ -366,7 +402,6 @@ impl Default for ChessBoard {
 #[cfg(test)]
 mod tests {
 
-    use shakmaty::fen::BoardFen;
     use types::chess_move::CastlingSide;
 
     use super::*;
@@ -443,7 +478,7 @@ mod tests {
         ];
 
         for (idx, mv) in moves.into_iter().enumerate() {
-            board.do_move(mv).unwrap();
+            board = board.do_move(mv).unwrap();
         }
     }
 
@@ -452,69 +487,133 @@ mod tests {
         let mut board = ChessBoard::new();
         println!("{board:#?}");
 
-        board.uci_move("d2d4").unwrap();
-        board.uci_move("d7d5").unwrap();
-        board.uci_move("g1f3").unwrap();
-        board.uci_move("b8c6").unwrap();
-        board.uci_move("b1c3").unwrap();
-        board.uci_move("g8f6").unwrap();
-        board.uci_move("e2e3").unwrap();
-        board.uci_move("e7e6").unwrap();
-        board.uci_move("a2a3").unwrap();
-        board.uci_move("g7g6").unwrap();
-        board.uci_move("f1b5").unwrap();
-        board.uci_move("a7a6").unwrap();
-        board.uci_move("b5c6").unwrap();
-        board.uci_move("b7c6").unwrap();
-        board.uci_move("f3e5").unwrap();
-        board.uci_move("d8d6").unwrap();
-        board.uci_move("f2f3").unwrap();
-        board.uci_move("c6c5").unwrap();
-        board.uci_move("e1g1").unwrap();
-        board.uci_move("c5c4").unwrap();
-        board.uci_move("e3e4").unwrap();
-        board.uci_move("c7c6").unwrap();
-        board.uci_move("c1f4").unwrap();
-        board.uci_move("a6a5").unwrap();
-        board.uci_move("c3a4").unwrap();
-        board.uci_move("f6h5").unwrap();
-        board.uci_move("d1d2").unwrap();
-        board.uci_move("f7f5").unwrap();
-        board.uci_move("e4f5").unwrap();
-        board.uci_move("e6f5").unwrap();
-        board.uci_move("f1e1").unwrap();
-        board.uci_move("c8d7").unwrap();
-        board.uci_move("e5c6").unwrap();
-        board.uci_move("e8f7").unwrap();
-        board.uci_move("f4d6").unwrap();
-        board.uci_move("f8d6").unwrap();
-        board.uci_move("c6e5").unwrap();
-        board.uci_move("f7g7").unwrap();
-        board.uci_move("e5d7").unwrap();
-        board.uci_move("h7h6").unwrap();
-        board.uci_move("a4b6").unwrap();
-        board.uci_move("a8a7").unwrap();
-        board.uci_move("d7c5").unwrap();
-        board.uci_move("d6f4").unwrap();
-        board.uci_move("c5e6").unwrap();
-        board.uci_move("g7f6").unwrap();
-        board.uci_move("e6f4").unwrap();
-        board.uci_move("h5f4").unwrap();
-        board.uci_move("d2f4").unwrap();
-        board.uci_move("g6g5").unwrap();
-        board.uci_move("f4e5").unwrap();
-        board.uci_move("f6f7").unwrap();
-        board.uci_move("e5h8").unwrap();
-        board.uci_move("f7g6").unwrap();
-        board.uci_move("g2g4").unwrap();
-        board.uci_move("a7h7").unwrap();
-        board.uci_move("h8h7").unwrap();
-        board.uci_move("g6h7").unwrap();
-        board.uci_move("e1e7").unwrap();
-        board.uci_move("h7g6").unwrap();
-        board.uci_move("a1e1").unwrap();
-        board.uci_move("g6f6").unwrap();
-        board.uci_move("e1e6").unwrap();
+        board
+            .uci_move("d2d4")
+            .unwrap()
+            .uci_move("d7d5")
+            .unwrap()
+            .uci_move("g1f3")
+            .unwrap()
+            .uci_move("b8c6")
+            .unwrap()
+            .uci_move("b1c3")
+            .unwrap()
+            .uci_move("g8f6")
+            .unwrap()
+            .uci_move("e2e3")
+            .unwrap()
+            .uci_move("e7e6")
+            .unwrap()
+            .uci_move("a2a3")
+            .unwrap()
+            .uci_move("g7g6")
+            .unwrap()
+            .uci_move("f1b5")
+            .unwrap()
+            .uci_move("a7a6")
+            .unwrap()
+            .uci_move("b5c6")
+            .unwrap()
+            .uci_move("b7c6")
+            .unwrap()
+            .uci_move("f3e5")
+            .unwrap()
+            .uci_move("d8d6")
+            .unwrap()
+            .uci_move("f2f3")
+            .unwrap()
+            .uci_move("c6c5")
+            .unwrap()
+            .uci_move("e1g1")
+            .unwrap()
+            .uci_move("c5c4")
+            .unwrap()
+            .uci_move("e3e4")
+            .unwrap()
+            .uci_move("c7c6")
+            .unwrap()
+            .uci_move("c1f4")
+            .unwrap()
+            .uci_move("a6a5")
+            .unwrap()
+            .uci_move("c3a4")
+            .unwrap()
+            .uci_move("f6h5")
+            .unwrap()
+            .uci_move("d1d2")
+            .unwrap()
+            .uci_move("f7f5")
+            .unwrap()
+            .uci_move("e4f5")
+            .unwrap()
+            .uci_move("e6f5")
+            .unwrap()
+            .uci_move("f1e1")
+            .unwrap()
+            .uci_move("c8d7")
+            .unwrap()
+            .uci_move("e5c6")
+            .unwrap()
+            .uci_move("e8f7")
+            .unwrap()
+            .uci_move("f4d6")
+            .unwrap()
+            .uci_move("f8d6")
+            .unwrap()
+            .uci_move("c6e5")
+            .unwrap()
+            .uci_move("f7g7")
+            .unwrap()
+            .uci_move("e5d7")
+            .unwrap()
+            .uci_move("h7h6")
+            .unwrap()
+            .uci_move("a4b6")
+            .unwrap()
+            .uci_move("a8a7")
+            .unwrap()
+            .uci_move("d7c5")
+            .unwrap()
+            .uci_move("d6f4")
+            .unwrap()
+            .uci_move("c5e6")
+            .unwrap()
+            .uci_move("g7f6")
+            .unwrap()
+            .uci_move("e6f4")
+            .unwrap()
+            .uci_move("h5f4")
+            .unwrap()
+            .uci_move("d2f4")
+            .unwrap()
+            .uci_move("g6g5")
+            .unwrap()
+            .uci_move("f4e5")
+            .unwrap()
+            .uci_move("f6f7")
+            .unwrap()
+            .uci_move("e5h8")
+            .unwrap()
+            .uci_move("f7g6")
+            .unwrap()
+            .uci_move("g2g4")
+            .unwrap()
+            .uci_move("a7h7")
+            .unwrap()
+            .uci_move("h8h7")
+            .unwrap()
+            .uci_move("g6h7")
+            .unwrap()
+            .uci_move("e1e7")
+            .unwrap()
+            .uci_move("h7g6")
+            .unwrap()
+            .uci_move("a1e1")
+            .unwrap()
+            .uci_move("g6f6")
+            .unwrap()
+            .uci_move("e1e6")
+            .unwrap();
     }
 
     #[test]

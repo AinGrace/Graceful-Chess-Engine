@@ -123,37 +123,33 @@ impl Move {
         }
     }
 
+    #[rustfmt::skip]
     pub fn to_uci(&self) -> String {
         let (from, to, promotion) = match *self {
-            Move::Standart {
-                from,
-                to,
-                promotion,
-                ..
-            } => (from, to, promotion),
+            Move::Standart { from, to, promotion, .. } => (from, to, promotion),
             Move::EnPassant { from, to } => (from, to, None),
-            Move::Castling { king, rook } => {
-                let to = match rook {
-                    Square::A1 | Square::A8 => rook.offset_checked(2),
-                    Square::H1 | Square::H8 => rook.offset_checked(-2),
-                    _ => unreachable!(),
-                };
-                (king, to, None)
+            Move::Castling { king, rook } if matches!(rook, Square::A1 | Square::A8) => {
+                (king, rook.offset_checked(2), None)
             }
+            Move::Castling { king, rook } if matches!(rook, Square::H1 | Square::H8) => {
+                (king, rook.offset_checked(-1), None)
+            }
+            Move::Castling { .. } => unreachable!("all valid possibilities are handled above"),
         };
 
         // UCI move is always 4 or 5 ASCII bytes long
-        let mut s = String::with_capacity(5);
+        let mut buffer = String::with_capacity(5);
 
-        s.push(from.file().char());
-        s.push(from.rank().char());
-        s.push(to.file().char());
-        s.push(to.rank().char());
+        buffer.push(from.file().char());
+        buffer.push(from.rank().char());
+        buffer.push(to.file().char());
+        buffer.push(to.rank().char());
 
-        if let Some(p) = promotion {
-            s.push(p.char());
+        if let Some(prom) = promotion {
+            buffer.push(prom.char());
         }
 
-        s
+
+        buffer
     }
 }
