@@ -16,7 +16,7 @@ impl HistoryChessBoard {
     }
 
     fn do_move_inner_checked(&mut self, mv: Move) {
-        self.inner.do_move_inner_checked(mv);
+        self.inner.do_move_inner(mv);
         self.history.push(mv);
     }
 }
@@ -36,7 +36,7 @@ pub fn perft_classic(chessboard: &ChessBoard, dep: u32) -> u64 {
 
     for mv in moves {
         let mut board_clone = chessboard.clone();
-        board_clone.do_move_inner_checked(mv);
+        board_clone.do_move_inner(mv);
         nodes += perft_classic(&board_clone, dep - 1);
     }
 
@@ -58,7 +58,7 @@ pub fn perft(chessboard: &ChessBoard, dep: u32) -> u64 {
         .iter()
         .map(|move_| {
             let mut board_clone = chessboard.clone();
-            board_clone.do_move_inner_checked(*move_);
+            board_clone.do_move_inner(*move_);
             perft(&board_clone, dep - 1)
         })
         .sum()
@@ -116,6 +116,7 @@ fn perft_comparing_inner(our: HistoryChessBoard, their: Chess, dep: u32) -> u64 
         println!("Move history -> {:#?}", our.history);
 
         println!("OUR board -> {:#?}", our.inner);
+        // println!("THEIR board -> {:#?}", their);
 
         panic!("Move mismatch");
     }
@@ -193,34 +194,17 @@ fn mismatch_test() {
     let fen: Fen = raw_fen.parse().unwrap();
     let mut chessboard: ChessBoard = fen.into_chessboard().unwrap();
 
-    chessboard.do_move_inner_checked(Move::capture(
+    chessboard.do_move_inner(Move::capture(
         Role::Pawn,
         Square::G2,
         Square::H3,
         Role::Pawn,
     ));
-    chessboard.do_move_inner_checked(Move::capture(
-        Role::Pawn,
-        Square::E6,
-        Square::D5,
-        Role::Pawn,
-    ));
-    chessboard.do_move_inner_checked(Move::capture(
-        Role::Pawn,
-        Square::E4,
-        Square::D5,
-        Role::Pawn,
-    ));
-    chessboard.do_move_inner_checked(Move::capture(
-        Role::Pawn,
-        Square::B4,
-        Square::C3,
-        Role::Knight,
-    ));
-    chessboard.do_move_inner_checked(Move::quiet(Role::Knight, Square::E5, Square::D3));
 
     dbg!(&chessboard);
-    let moves = chessboard.legal_moves();
+    println!("whites -> {:#?}", chessboard.board().whites());
+    println!("blacks -> {:#?}", chessboard.board().blacks());
+    // let moves = chessboard.legal_moves();
     // dbg!(moves);
 }
 

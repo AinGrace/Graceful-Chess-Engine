@@ -6,8 +6,8 @@ use std::{
 
 use arrayvec::ArrayVec;
 use types::{
-    bitboard::Bitboard, castling_rights::CastlingRights, chess_move::Move, color::Color,
-    file::File, piece::Piece, rank::Rank, role::Role, square::Square,
+    bitboard::Bitboard, castlings::Castlings, chess_move::Move, color::Color, piece::Piece,
+    rank::Rank, role::Role, square::Square,
 };
 
 use crate::{board::Board, fen::Fen, move_gen};
@@ -50,7 +50,7 @@ pub enum PositionError {
 pub struct ChessBoard {
     board: Board,
     turn: Color,
-    castling_rights: CastlingRights,
+    castlings: Castlings,
     ep_square: Option<Square>,
     half_moves: u32,
     full_moves: NonZeroU32,
@@ -62,18 +62,19 @@ impl ChessBoard {
         Self {
             board: Board::new(),
             turn: Color::White,
-            castling_rights: CastlingRights::new(),
+            castlings: Castlings::new(),
             ep_square: None,
             half_moves: 0,
             full_moves: NonZeroU32::MIN,
         }
     }
 
+    /// create a new chessboard from Fen struct
     pub fn from_fen(
         Fen {
             board,
             turn,
-            castling_rights,
+            castlings,
             ep_square,
             half_moves,
             full_moves,
@@ -82,7 +83,7 @@ impl ChessBoard {
     ) -> Result<Self, PositionError> {
         let pos = Self {
             board,
-            castling_rights,
+            castlings,
             turn,
             ep_square,
             half_moves,
@@ -136,8 +137,8 @@ impl ChessBoard {
         self.ep_square
     }
 
-    pub fn castling_rights(&self) -> &CastlingRights {
-        &self.castling_rights
+    pub fn castling_rights(&self) -> &Castlings {
+        &self.castlings
     }
 
     /// Checks move for legality and then executes it
@@ -145,7 +146,7 @@ impl ChessBoard {
     /// consider do_move_inner_checked if you can guarantee validity
     pub fn do_move(mut self, mv: Move) -> Result<Self, InvalidMoveError> {
         if self.is_legal_move(mv) {
-            self.do_move_inner_checked(mv);
+            self.do_move_inner(mv);
             Ok(self)
         } else {
             // TODO consider using long algebraic notation instead of uci
@@ -156,6 +157,7 @@ impl ChessBoard {
         }
     }
 
+    /// parse uci string and execute it
     pub fn uci_move(mut self, raw_uci: &str) -> Result<Self, InvalidMoveError> {
         let uci_move = match self.parse_uci(raw_uci) {
             Some(uci_move) => uci_move,
@@ -167,11 +169,12 @@ impl ChessBoard {
             }
         };
 
-        self.do_move_inner_checked(uci_move);
+        self.do_move_inner(uci_move);
 
         Ok(self)
     }
 
+    /// parse uci string as ChessMove enum
     pub fn parse_uci(&self, raw_uci: &str) -> Option<Move> {
         self.legal_moves()
             .into_iter()
@@ -190,29 +193,45 @@ impl ChessBoard {
     /// which may lead to following:
     ///
     /// **ANY** subsequent call of **ANY** method of ChessBoard can panic at **ANY** time
-    #[rustfmt::skip]
-    pub fn do_move_inner_checked(&mut self, mv: Move) {
-        self.ep_square.take();
+    pub fn do_move_inner(&mut self, mv: Move) {
+        self.ep_square.take(); // remove the ep square
 
         let us = self.turn;
         let board = &mut self.board;
 
         match mv {
-            Move::Standart { role, from, to, capture, promotion, } => {
-                // set en_passaunt
-                if role == Role::Pawn && (to as i32 - from as i32).abs() == 16 {
+            Move::Standart {
+                role,
+                from,
+                to,
+                capture,
+                promotion,
+            } => {
+                // set en_passaunt on pawn double push
+                if role == Role::Pawn && Square::abs_diff(from, to) == 16 {
                     let ep = ((from as u8 + to as u8) >> 1) as u32;
                     self.ep_square = Some(Square::from_u32_checked(ep));
                 }
 
                 board.discard_piece_at(from);
 
-                if capture.is_some() {
+                if let Some(captured) = capture {
                     board.discard_piece_at(to);
+
+                    if captured == Role::Rook {
+                        // change castling rights on capture
+                        match (us, to) {
+                            (Color::Black, Square::H1) => self.castlings.remove_w_short(),
+                            (Color::White, Square::H8) => self.castlings.remove_b_short(),
+                            (Color::Black, Square::A1) => self.castlings.remove_w_long(),
+                            (Color::White, Square::A8) => self.castlings.remove_b_long(),
+
+                            _rest => (),
+                        }
+                    }
                 }
 
-                // if prom exists, set it at 'to' sqr, set moving piece otherwise
-
+                // if promotion exists set it at destination square, otherwise set the moving piece
                 let piece = match promotion {
                     Some(promo) => Piece::of(promo, us),
                     None => Piece::of(role, us),
@@ -220,35 +239,19 @@ impl ChessBoard {
 
                 board.set_piece_at(piece, to);
 
-                // change castling rights
-                match (capture, to.file(), to.rank()) {
-                    (Some(Role::Rook), File::H, Rank::First) if us == Color::Black => {
-                        self.castling_rights.remove_w_short()
-                    }
-                    (Some(Role::Rook), File::H, Rank::Eighth) if us == Color::White => {
-                        self.castling_rights.remove_b_short();
-                    }
-                    (Some(Role::Rook), File::A, Rank::First) if us == Color::Black => {
-                        self.castling_rights.remove_w_long();
-                    }
-                    (Some(Role::Rook), File::A, Rank::Eighth) if us == Color::White => {
-                        self.castling_rights.remove_b_long();
-                    }
-                    _ => (),
-                }
-
-                // change castling rights
+                // change castling rights on quiet move
                 match (us, role, from) {
-                    (Color::White, Role::King, Square::E1) => self.castling_rights.remove_white(),
-                    (Color::White, Role::Rook, Square::A1) => self.castling_rights.remove_w_long(),
-                    (Color::White, Role::Rook, Square::H1) => self.castling_rights.remove_w_short(),
-                    (Color::Black, Role::King, Square::E8) => self.castling_rights.remove_black(),
-                    (Color::Black, Role::Rook, Square::A8) => self.castling_rights.remove_b_long(),
-                    (Color::Black, Role::Rook, Square::H8) => self.castling_rights.remove_b_short(),
+                    (Color::White, Role::King, Square::E1) => self.castlings.remove_white(),
+                    (Color::White, Role::Rook, Square::A1) => self.castlings.remove_w_long(),
+                    (Color::White, Role::Rook, Square::H1) => self.castlings.remove_w_short(),
+                    (Color::Black, Role::King, Square::E8) => self.castlings.remove_black(),
+                    (Color::Black, Role::Rook, Square::A8) => self.castlings.remove_b_long(),
+                    (Color::Black, Role::Rook, Square::H8) => self.castlings.remove_b_short(),
 
                     _rest => (),
                 }
 
+                // zeroify half moves on irreversible move, increment otherwise
                 if role == Role::Pawn || capture.is_some() {
                     self.half_moves = 0;
                 } else {
@@ -258,9 +261,9 @@ impl ChessBoard {
             Move::EnPassant { from, to } => {
                 self.half_moves = 0;
                 let our_pawn = Piece::of(Role::Pawn, us);
-                let captured_pawn = Square::of(to.file(), from.rank());
+                let captured_sqr = Square::of(to.file(), from.rank());
 
-                board.discard_piece_at(captured_pawn);
+                board.discard_piece_at(captured_sqr);
                 board.discard_piece_at(from);
                 board.set_piece_at(our_pawn, to);
             }
@@ -279,7 +282,7 @@ impl ChessBoard {
                 board.set_piece_at(Piece::of(Role::King, us), king_dest);
                 board.set_piece_at(Piece::of(Role::Rook, us), rook_dest);
 
-                self.castling_rights.remove_all_of(us);
+                self.castlings.remove_all_of(us);
 
                 self.half_moves += 1;
             }
@@ -298,7 +301,7 @@ impl ChessBoard {
         Fen {
             board: self.board.clone(),
             turn: self.turn,
-            castling_rights: self.castling_rights.clone(),
+            castlings: self.castlings.clone(),
             ep_square: self.ep_square,
             half_moves: self.half_moves,
             full_moves: self.full_moves,
@@ -346,7 +349,7 @@ impl ChessBoard {
         let w_king = board.peek(Square::E1);
         let b_king = board.peek(Square::E8);
 
-        let rights = &self.castling_rights;
+        let rights = &self.castlings;
 
         if rights.w_short()
             && (w_king != Some(Piece::WKing) || board.peek(Square::H1) != Some(Piece::WRook))
@@ -385,7 +388,7 @@ impl Debug for ChessBoard {
         f.debug_struct("ChessBoard")
             .field("board", &self.board)
             .field("turn", &self.turn)
-            .field("castling_rights", &self.castling_rights)
+            .field("castling_rights", &self.castlings)
             .field("ep_square", &self.ep_square)
             .field("half_moves", &self.half_moves)
             .field("full_moves", &self.full_moves)

@@ -6,8 +6,7 @@ use std::{
 };
 
 use types::{
-    castling_rights::CastlingRights, color::Color, file::File, piece::Piece, rank::Rank,
-    square::Square,
+    castlings::Castlings, color::Color, file::File, piece::Piece, rank::Rank, square::Square,
 };
 
 use crate::{
@@ -33,7 +32,7 @@ impl Display for FenError {
 pub struct Fen {
     pub board: Board,
     pub turn: Color,
-    pub castling_rights: CastlingRights,
+    pub castlings: Castlings,
     pub ep_square: Option<Square>,
     pub half_moves: u32,
     pub full_moves: NonZeroU32,
@@ -55,7 +54,7 @@ impl Fen {
         Ok(Self {
             board,
             turn,
-            castling_rights,
+            castlings: castling_rights,
             ep_square,
             half_moves,
             full_moves,
@@ -108,7 +107,7 @@ impl Display for Fen {
             "{} {} {} {} {} {}",
             self.board_to_fen_position_setup(),
             self.turn.char(),
-            self.castling_rights,
+            self.castlings,
             self.ep_square.map_or("-".into(), |ep| ep.to_string()),
             self.half_moves,
             self.full_moves
@@ -181,7 +180,7 @@ fn parse_square(file: i32, rank: i32) -> Square {
 
 fn parse_positional_data(
     position_data: &str,
-) -> Result<(Color, CastlingRights, Option<Square>, u32, NonZeroU32), FenError> {
+) -> Result<(Color, Castlings, Option<Square>, u32, NonZeroU32), FenError> {
     let mut chunks = position_data.split_whitespace();
 
     let side_to_move = parse_side_to_move(&mut chunks)?;
@@ -210,15 +209,15 @@ fn parse_side_to_move<'a>(chunks: &mut impl Iterator<Item = &'a str>) -> Result<
 
 fn parse_castling_rights<'a>(
     chunks: &mut impl Iterator<Item = &'a str>,
-) -> Result<CastlingRights, FenError> {
+) -> Result<Castlings, FenError> {
     let second_chunk = chunks
         .next()
         .ok_or(FenError("Castling data is missing".into()))?;
 
     let rights = if second_chunk == "-" {
-        CastlingRights::new_empty()
+        Castlings::new_empty()
     } else {
-        CastlingRights::from_str(second_chunk).ok_or(FenError("Invalid castling data".into()))?
+        Castlings::from_str(second_chunk).ok_or(FenError("Invalid castling data".into()))?
     };
 
     Ok(rights)

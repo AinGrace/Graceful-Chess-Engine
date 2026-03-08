@@ -131,6 +131,6 @@ impl ByRole {
             return Role::King;
         }
 
-        unreachable!("peek_role_checked on empty square")
+        unreachable!("peek_role_checked on empty square {square}")
     }
 }

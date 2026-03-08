@@ -4,9 +4,9 @@ use std::fmt::Display;
 use crate::color::Color;
 
 #[derive(Clone)]
-pub struct CastlingRights(u8);
+pub struct Castlings(u8);
 
-impl CastlingRights {
+impl Castlings {
     pub fn new() -> Self {
         let mut rights = 0;
         rights |= 1 << 0;
@@ -128,19 +128,19 @@ impl CastlingRights {
     }
 }
 
-impl Default for CastlingRights {
+impl Default for Castlings {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl fmt::Debug for CastlingRights {
+impl fmt::Debug for Castlings {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         Display::fmt(&self, f)
     }
 }
 
-impl Display for CastlingRights {
+impl Display for Castlings {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if !self.w_short() && !self.w_long() && !self.b_short() && !self.b_long() {
             return write!(f, "-");
@@ -171,7 +171,7 @@ mod tests {
 
     #[test]
     fn castling_rights_removal_test() {
-        let mut rights = CastlingRights::new();
+        let mut rights = Castlings::new();
         dbg!(&rights);
 
         rights.remove_w_short();

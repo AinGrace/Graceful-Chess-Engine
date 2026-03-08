@@ -1,4 +1,4 @@
-use std::{fmt::Display, mem::transmute};
+use std::{fmt::Display, mem::transmute, ops::Add};
 
 use crate::{file::File, rank::Rank};
 
@@ -79,12 +79,10 @@ impl Square {
     pub const fn rank(self) -> Rank {
         Rank::new_checked(self.as_u32() >> 3)
     }
-}
 
-impl Square {
-    /// An iterator over all values of Square enum starting from A1, B1, C1...
-    pub fn values() -> impl Iterator<Item = Self> {
-        (0..64).map(Self::from_u32_checked)
+    #[inline(always)]
+    pub const fn abs_diff(left: Square, right: Square) -> u32 {
+        (left as i32 - right as i32).abs() as u32
     }
 }
 

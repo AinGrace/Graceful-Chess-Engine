@@ -1,7 +1,7 @@
 pub mod bitboard;
 pub mod by_color;
 pub mod by_role;
-pub mod castling_rights;
+pub mod castlings;
 pub mod chess_move;
 pub mod color;
 pub mod direction;

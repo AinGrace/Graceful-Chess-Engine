@@ -247,6 +247,19 @@ impl Board {
 
     #[inline(always)]
     pub fn discard_piece_at(&mut self, square: Square) {
+        if let Some(piece) = self.peek(square) {
+            let role_bb = self.by_role.get_mut(piece.role());
+            let color_bb = self.by_color.get_mut(piece.color());
+
+            *role_bb = role_bb.clear_square(square);
+            *color_bb = color_bb.clear_square(square);
+
+            self.occupied = self.occupied.clear_square(square);
+        }
+    }
+
+    #[inline(always)]
+    pub fn discard_piece_at_checked(&mut self, square: Square) {
         let piece = self.peek_checked(square);
         let role_bb = self.by_role.get_mut(piece.role());
         let color_bb = self.by_color.get_mut(piece.color());
@@ -255,6 +268,18 @@ impl Board {
         *color_bb = color_bb.clear_square(square);
 
         self.occupied = self.occupied.clear_square(square);
+    }
+
+    #[inline(always)]
+    pub fn replace_piece_at(&mut self, square: Square, piece: Piece) {
+        self.discard_piece_at(square);
+        self.set_piece_at(piece, square);
+    }
+
+    #[inline(always)]
+    pub fn replace_piece_at_checked(&mut self, square: Square, piece: Piece) {
+        self.discard_piece_at_checked(square);
+        self.set_piece_at(piece, square);
     }
 
     #[must_use]
