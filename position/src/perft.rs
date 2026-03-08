@@ -1,4 +1,5 @@
 use arrayvec::ArrayVec;
+use rayon::prelude::*;
 use shakmaty::{Chess, Move as TheirMove, Position, fen::Fen as TheirFen};
 use types::{chess_move::Move, role::Role, square::Square};
 
@@ -101,7 +102,8 @@ fn perft_depth_6_equals_119_060_324() {
 #[test]
 fn perft_depth_7_equals_3_195_901_860() {
     let chessboard = ChessBoard::new();
-    let res = perft(&chessboard, 7);
+    let mut tt = PerftTranspositions::new(256);
+    let res = perft_tt(&chessboard, 7, &mut tt);
     assert_eq!(res, 3195901860);
 }
 
@@ -109,7 +111,7 @@ fn perft_depth_7_equals_3_195_901_860() {
 #[ignore]
 fn perft_depth_8_equals_84_998_978_956() {
     let chessboard = ChessBoard::new();
-    let res = perft(&chessboard, 8);
+    let res = perft_parallel(&chessboard, 8);
     assert_eq!(res, 84_998_978_956);
 }
 
@@ -202,6 +204,100 @@ impl HistoryChessBoard {
         self.inner.do_move_inner(mv);
         self.history.push(mv);
     }
+}
+
+struct PerftTranspositions {
+    entries: Vec<PerftEntry>,
+    size: usize,
+}
+
+#[derive(Clone, Copy)]
+struct PerftEntry {
+    hash: u64,
+    depth: u32,
+    count: u64,
+}
+
+impl PerftTranspositions {
+    fn new(mb: usize) -> Self {
+        let size = (mb * 1024 * 1024) / size_of::<PerftEntry>();
+
+        Self {
+            entries: vec![
+                PerftEntry {
+                    hash: 0,
+                    depth: 0,
+                    count: 0
+                };
+                size
+            ],
+            size,
+        }
+    }
+
+    fn index(&self, hash: u64) -> usize {
+        (hash as usize) % self.size
+    }
+
+    pub fn get(&self, hash: u64, depth: u32) -> Option<u64> {
+        let entry = &self.entries[self.index(hash)];
+        if entry.hash == hash && entry.depth == depth {
+            Some(entry.count)
+        } else {
+            None
+        }
+    }
+
+    pub fn insert(&mut self, hash: u64, depth: u32, count: u64) {
+        let idx = self.index(hash);
+        self.entries[idx] = PerftEntry { hash, depth, count };
+    }
+}
+
+fn perft_tt(chessboard: &ChessBoard, dep: u32, tt: &mut PerftTranspositions) -> u64 {
+    if dep == 0 {
+        return 1;
+    }
+
+    let moves = chessboard.legal_moves();
+
+    if dep == 1 {
+        return moves.len() as u64;
+    }
+
+    if let Some(count) = tt.get(chessboard.zobrist_hash(), dep) {
+        return count;
+    }
+
+    let count = moves
+        .iter()
+        .map(|move_| {
+            let mut board_clone = chessboard.clone();
+            board_clone.do_move_inner(*move_);
+            perft_tt(&board_clone, dep - 1, tt)
+        })
+        .sum();
+
+    tt.insert(chessboard.zobrist_hash(), dep, count);
+
+    count
+}
+
+fn perft_parallel(chessboard: &ChessBoard, dep: u32) -> u64 {
+    if dep <= 1 {
+        return perft_tt(chessboard, dep, &mut PerftTranspositions::new(64));
+    }
+
+    chessboard
+        .legal_moves()
+        .par_iter()
+        .map(|move_| {
+            let mut board_clone = chessboard.clone();
+            board_clone.do_move_inner(*move_);
+            let mut tt = PerftTranspositions::new(128);
+            perft_tt(&board_clone, dep - 1, &mut tt)
+        })
+        .sum()
 }
 
 pub fn perft(chessboard: &ChessBoard, dep: u32) -> u64 {
