@@ -3,7 +3,7 @@ use std::fmt::Display;
 
 use crate::color::Color;
 
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 pub struct Castlings(u8);
 
 impl Castlings {
@@ -125,6 +125,10 @@ impl Castlings {
     pub fn remove_black(&mut self) {
         self.remove_b_short();
         self.remove_b_long();
+    }
+
+    pub fn as_usize(&self) -> usize {
+        self.0 as usize
     }
 }
 

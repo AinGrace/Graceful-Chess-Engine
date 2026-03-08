@@ -3,20 +3,21 @@ use std::fmt::Debug;
 use crate::{color::Color, role::Role};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
 pub enum Piece {
-    WPawn,
-    WKnight,
-    WBishop,
-    WRook,
-    WQueen,
-    WKing,
+    WPawn = 0,
+    WKnight = 1,
+    WBishop = 2,
+    WRook = 3,
+    WQueen = 4,
+    WKing = 5,
 
-    BPawn,
-    BKnight,
-    BBishop,
-    BRook,
-    BQueen,
-    BKing,
+    BPawn = 6,
+    BKnight = 7,
+    BBishop = 8,
+    BRook = 9,
+    BQueen = 10,
+    BKing = 11,
 }
 
 impl Piece {
@@ -103,5 +104,9 @@ impl Piece {
             | Piece::BQueen
             | Piece::BKing => Color::Black,
         }
+    }
+
+    pub const fn as_usize(self) -> usize {
+        self as usize
     }
 }

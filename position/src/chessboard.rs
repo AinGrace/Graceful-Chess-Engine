@@ -10,7 +10,7 @@ use types::{
     rank::Rank, role::Role, square::Square,
 };
 
-use crate::{board::Board, fen::Fen, move_gen};
+use crate::{board::Board, fen::Fen, move_gen, zobrist};
 
 #[derive(Debug)]
 pub struct InvalidMoveError {
@@ -54,19 +54,24 @@ pub struct ChessBoard {
     ep_square: Option<Square>,
     half_moves: u32,
     full_moves: NonZeroU32,
+    zobrist_hash: u64,
 }
 
 impl ChessBoard {
     /// create a new chessboard with standart position
     pub fn new() -> Self {
-        Self {
+        let mut pos = Self {
             board: Board::new(),
             turn: Color::White,
             castlings: Castlings::new(),
             ep_square: None,
             half_moves: 0,
             full_moves: NonZeroU32::MIN,
-        }
+            zobrist_hash: 0, // temporary value
+        };
+
+        pos.zobrist_hash = zobrist::compute_hash(&pos);
+        pos
     }
 
     /// create a new chessboard from Fen struct
@@ -81,17 +86,19 @@ impl ChessBoard {
             ..
         }: Fen,
     ) -> Result<Self, PositionError> {
-        let pos = Self {
+        let mut pos = Self {
             board,
             castlings,
             turn,
             ep_square,
             half_moves,
             full_moves,
+            zobrist_hash: 0, //temporary value
         };
 
         pos.health_check()?;
 
+        pos.zobrist_hash = zobrist::compute_hash(&pos);
         Ok(pos)
     }
 
@@ -194,10 +201,11 @@ impl ChessBoard {
     ///
     /// **ANY** subsequent call of **ANY** method of ChessBoard can panic at **ANY** time
     pub fn do_move_inner(&mut self, mv: Move) {
-        self.ep_square.take(); // remove the ep square
-
         let us = self.turn;
         let board = &mut self.board;
+
+        let old_ep = self.ep_square.take(); // remove the ep square
+        let old_castling = self.castlings;
 
         match mv {
             Move::Standart {
@@ -287,6 +295,16 @@ impl ChessBoard {
                 self.half_moves += 1;
             }
         }
+
+        zobrist::update_hash(
+            &mut self.zobrist_hash,
+            mv,
+            us,
+            old_ep,
+            old_castling,
+            self.ep_square,
+            self.castlings,
+        );
 
         // increment full_moves
         if us == Color::Black {
