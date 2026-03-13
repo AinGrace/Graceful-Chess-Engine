@@ -172,8 +172,8 @@ fn parse_piece(chr: char) -> Result<Piece, FenError> {
 }
 
 fn parse_square(file: i32, rank: i32) -> Square {
-    let file = File::new_checked(file as u32);
-    let rank = Rank::new_checked(rank as u32);
+    let file = File::from_u32_checked(file as u32);
+    let rank = Rank::from_u32_checked(rank as u32);
 
     Square::of(file, rank)
 }
@@ -200,7 +200,7 @@ fn parse_side_to_move<'a>(chunks: &mut impl Iterator<Item = &'a str>) -> Result<
         "Side to move should contain a singular character".into(),
     ))?;
 
-    let side_to_move = Color::new(side_to_move_char).ok_or(FenError(
+    let side_to_move = Color::from_char(side_to_move_char).ok_or(FenError(
         "Invalid side to move char, should be either w or b".into(),
     ))?;
 

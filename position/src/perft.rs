@@ -3,7 +3,7 @@ use rayon::prelude::*;
 use shakmaty::{Chess, Move as TheirMove, Position, fen::Fen as TheirFen};
 use types::{chess_move::Move, role::Role, square::Square};
 
-use crate::{chessboard::ChessBoard, fen::Fen};
+use crate::{chessboard::ChessBoard, fen::Fen, zobrist};
 
 #[test]
 #[ignore = "to be onvoked manually for debugging"]
@@ -102,8 +102,7 @@ fn perft_depth_6_equals_119_060_324() {
 #[test]
 fn perft_depth_7_equals_3_195_901_860() {
     let chessboard = ChessBoard::new();
-    let mut tt = PerftTranspositions::new(256);
-    let res = perft_tt(&chessboard, 7, &mut tt);
+    let res = perft(&chessboard, 7);
     assert_eq!(res, 3195901860);
 }
 
@@ -367,11 +366,11 @@ fn translate_move(their_move: TheirMove) -> Move {
             to,
             promotion,
         } => Move::Standart {
-            role: Role::new(role.char()).unwrap(),
+            role: Role::from_char(role.char()).unwrap(),
             from: Square::from_u32_checked(from.to_u32()),
             to: Square::from_u32_checked(to.to_u32()),
-            capture: capture.map_or(None, |r| Role::new(r.char())),
-            promotion: promotion.map_or(None, |p| Some(Role::new(p.char()).unwrap())),
+            capture: capture.map_or(None, |r| Role::from_char(r.char())),
+            promotion: promotion.map_or(None, |p| Some(Role::from_char(p.char()).unwrap())),
         },
         TheirMove::EnPassant { from, to } => Move::EnPassant {
             from: Square::from_u32_checked(from.to_u32()),
