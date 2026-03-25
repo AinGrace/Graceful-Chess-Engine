@@ -1,5 +1,5 @@
-use arrayvec::ArrayVec;
 use types::{
+    MoveList,
     bitboard::{
         Bitboard, ToBitboard,
         masks::{RANK_1, RANK_2, RANK_7, RANK_8},
@@ -16,8 +16,8 @@ use types::{
 use crate::{chessboard::ChessBoard, move_gen::pin_info::PinInfo};
 
 #[inline(always)]
-pub fn gen_legal_moves(pos: &ChessBoard) -> ArrayVec<Move, 218> {
-    let mut moves = ArrayVec::<Move, 218>::new();
+pub fn gen_legal_moves(pos: &ChessBoard) -> MoveList {
+    let mut moves = MoveList::new();
     let king_checkers = pos.checkers(pos.turn());
     let king_sqr = pos.board().the_king(pos.turn());
 
@@ -37,7 +37,7 @@ pub fn gen_legal_moves(pos: &ChessBoard) -> ArrayVec<Move, 218> {
 }
 
 #[inline(always)]
-fn gen_standart_moves(pos: &ChessBoard, pin_info: &PinInfo, moves: &mut ArrayVec<Move, 218>) {
+fn gen_standart_moves(pos: &ChessBoard, pin_info: &PinInfo, moves: &mut MoveList) {
     let us = pos.turn();
     let them = !us;
 
@@ -217,7 +217,7 @@ fn gen_standart_moves(pos: &ChessBoard, pin_info: &PinInfo, moves: &mut ArrayVec
 }
 
 #[inline(always)]
-fn gen_castling_moves(pos: &ChessBoard, moves: &mut ArrayVec<Move, 218>) {
+fn gen_castling_moves(pos: &ChessBoard, moves: &mut MoveList) {
     let our = pos.turn();
     let enemy = !our;
     let board = pos.board();
@@ -264,7 +264,7 @@ fn gen_castling_moves(pos: &ChessBoard, moves: &mut ArrayVec<Move, 218>) {
 }
 
 #[inline(always)]
-pub fn gen_ep_moves(pos: &ChessBoard, moves: &mut ArrayVec<Move, 218>) {
+pub fn gen_ep_moves(pos: &ChessBoard, moves: &mut MoveList) {
     let Some(ep) = pos.ep_square() else {
         return;
     };
@@ -323,7 +323,7 @@ fn gen_evasions(
     king_sqr: Square,
     checker: Bitboard,
     pinned: Bitboard,
-    moves: &mut ArrayVec<Move, 218>,
+    moves: &mut MoveList,
 ) {
     gen_king_moves(pos, king_sqr, moves);
 
@@ -339,7 +339,7 @@ fn gen_evasions(
 
 // NOTE consider calculating via enemy piece attack maps in order to avoid branches
 #[inline(always)]
-fn gen_king_moves(pos: &ChessBoard, king_sqr: Square, moves: &mut ArrayVec<Move, 218>) {
+fn gen_king_moves(pos: &ChessBoard, king_sqr: Square, moves: &mut MoveList) {
     let board = pos.board();
     let us = pos.turn();
 
@@ -396,7 +396,7 @@ fn gen_blocking_moves(
     evasion_mask: Bitboard,
     checker: Square,
     pinned: Bitboard,
-    moves: &mut ArrayVec<Move, 218>,
+    moves: &mut MoveList,
 ) {
     let our = pos.turn();
     let board = pos.board();
@@ -490,12 +490,7 @@ fn gen_blocking_moves(
 }
 
 #[inline(always)]
-fn gen_ep_evasions(
-    pos: &ChessBoard,
-    checker: Square,
-    pinned: Bitboard,
-    moves: &mut ArrayVec<Move, 218>,
-) {
+fn gen_ep_evasions(pos: &ChessBoard, checker: Square, pinned: Bitboard, moves: &mut MoveList) {
     let Some(ep_sqr) = pos.ep_square() else {
         return;
     };
@@ -555,7 +550,7 @@ fn gen_unpinned_standart_moves(
     bishops: Bitboard,
     rooks: Bitboard,
     queens: Bitboard,
-    moves: &mut ArrayVec<Move, 218>,
+    moves: &mut MoveList,
 ) {
     let friendly = pos.board().by_color(side);
     let enemy = pos.board().by_color(!side);
@@ -819,7 +814,7 @@ mod pin_info {
         #[inline(always)]
         pub fn ray_of(&self, square: Square) -> Option<Bitboard> {
             if self.pinned_pieces.is_square_set(square) {
-                // SAFETY: calling this unsafe function is sound if square is pinned
+                // SAFETY: calling this unsafe function is sound because square is pinned
                 Some(unsafe { self.ray_of_unchecked(square) })
             } else {
                 None

@@ -1,7 +1,6 @@
-use arrayvec::ArrayVec;
 use rayon::prelude::*;
 use shakmaty::{Chess, Move as TheirMove, Position, fen::Fen as TheirFen};
-use types::{chess_move::Move, role::Role, square::Square};
+use types::{MoveList, chess_move::Move, role::Role, square::Square};
 
 use crate::{chessboard::ChessBoard, fen::Fen, zobrist};
 
@@ -195,7 +194,7 @@ struct HistoryChessBoard {
 }
 
 impl HistoryChessBoard {
-    fn legal_moves(&self) -> ArrayVec<Move, 218> {
+    fn legal_moves(&self) -> MoveList {
         self.inner.legal_moves()
     }
 

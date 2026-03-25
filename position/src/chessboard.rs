@@ -4,10 +4,9 @@ use std::{
     num::NonZeroU32,
 };
 
-use arrayvec::ArrayVec;
 use types::{
-    bitboard::Bitboard, castlings::Castlings, chess_move::Move, color::Color, piece::Piece,
-    rank::Rank, role::Role, square::Square,
+    MoveList, bitboard::Bitboard, castlings::Castlings, chess_move::Move, color::Color,
+    piece::Piece, rank::Rank, role::Role, square::Square,
 };
 
 use crate::{board::Board, fen::Fen, move_gen, zobrist};
@@ -31,8 +30,12 @@ impl InvalidMoveError {
         &self.mv
     }
 
-    pub fn chessboard(&self) -> &ChessBoard {
+    pub fn chessboard_ref(&self) -> &ChessBoard {
         &self.board
+    }
+
+    pub fn chessboard(self) -> ChessBoard {
+        self.board
     }
 }
 
@@ -130,7 +133,7 @@ impl ChessBoard {
     }
 
     /// Generate and return a list of legal moves for the curent position
-    pub fn legal_moves(&self) -> ArrayVec<Move, 218> {
+    pub fn legal_moves(&self) -> MoveList {
         move_gen::gen_legal_moves(self)
     }
 

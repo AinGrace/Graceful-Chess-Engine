@@ -3,7 +3,9 @@ resolver = "3"
 members = [
    "types",
    "lookup",
-   "position"
+   "position",
+   "engine",
+   "tui"
 ]
 
 [profile.release]
@@ -15,6 +17,7 @@ strip = true
 debug = 0
 incremental = false
 overflow-checks = false
+# force-frame-pointers = true
 
 [profile.profiling]
 inherits = "release"
