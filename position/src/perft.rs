@@ -186,6 +186,28 @@ fn perft_custom_position_5() {
     assert_eq!(perft(&chessboard.clone(), 7), 287188994746);
 }
 
+#[test]
+fn perft_suite() {
+    let suite = PerftSuite::new();
+
+    suite.entries.into_iter().for_each(|entry| {
+        let fen = entry.fen;
+        let chessboard = fen.clone().into_chessboard().expect("Fen should be valid");
+
+        entry
+            .depth_values
+            .iter()
+            .enumerate()
+            .for_each(|(depth, nodes_count)| {
+                assert_eq!(
+                    perft(&chessboard.clone(), (depth + 1) as u32),
+                    *nodes_count,
+                    "the nodes cound of depth {depth} for fen {fen} should be {nodes_count}"
+                );
+            });
+    });
+}
+
 /// a wrapper around ChessBoard that preserves the move history
 #[derive(Debug, Clone)]
 struct HistoryChessBoard {
@@ -205,12 +227,12 @@ impl HistoryChessBoard {
 }
 
 struct PerftTranspositions {
-    entries: Vec<PerftEntry>,
+    entries: Vec<PerftTTEntry>,
     size: usize,
 }
 
 #[derive(Clone, Copy)]
-struct PerftEntry {
+struct PerftTTEntry {
     hash: u64,
     depth: u32,
     count: u64,
@@ -218,11 +240,11 @@ struct PerftEntry {
 
 impl PerftTranspositions {
     fn new(mb: usize) -> Self {
-        let size = (mb * 1024 * 1024) / size_of::<PerftEntry>();
+        let size = (mb * 1024 * 1024) / size_of::<PerftTTEntry>();
 
         Self {
             entries: vec![
-                PerftEntry {
+                PerftTTEntry {
                     hash: 0,
                     depth: 0,
                     count: 0
@@ -248,10 +270,53 @@ impl PerftTranspositions {
 
     pub fn insert(&mut self, hash: u64, depth: u32, count: u64) {
         let idx = self.index(hash);
-        self.entries[idx] = PerftEntry { hash, depth, count };
+        self.entries[idx] = PerftTTEntry { hash, depth, count };
     }
 }
 
+#[derive(Debug)]
+struct PerftSuite {
+    entries: Vec<PerftSuiteEntry>,
+}
+
+#[derive(Debug)]
+struct PerftSuiteEntry {
+    fen: Fen,
+    depth_values: Vec<u64>,
+}
+
+impl PerftSuite {
+    fn new() -> Self {
+        let raw_suite = include_str!("../../perftsuite.epd");
+        assert!(raw_suite.len() > 0, "perftsuite should not be empty");
+
+        let mut entries = vec![];
+        raw_suite.lines().for_each(|line| {
+            let mut spliterator = line.split(';');
+
+            let raw_fen = spliterator.next().expect("first split entry should be fen");
+            let fen = Fen::new(raw_fen).expect(&format!("{raw_fen} should be valid fen"));
+
+            let depth_values = spliterator
+                .map(|prefixed_depth_value| {
+                    let (_ignored_prefix, depth_value) = prefixed_depth_value.split_at(3);
+                    let depth_value = depth_value
+                        .trim()
+                        .parse::<u64>()
+                        .expect(&format!("{depth_value} should be valid for u64"));
+
+                    depth_value
+                })
+                .collect();
+
+            entries.push(PerftSuiteEntry { fen, depth_values });
+        });
+
+        PerftSuite { entries }
+    }
+}
+
+// a perft functions with transposition table
 fn perft_tt(chessboard: &ChessBoard, dep: u32, tt: &mut PerftTranspositions) -> u64 {
     if dep == 0 {
         return 1;
@@ -281,6 +346,7 @@ fn perft_tt(chessboard: &ChessBoard, dep: u32, tt: &mut PerftTranspositions) -> 
     count
 }
 
+// a parallel perft
 fn perft_parallel(chessboard: &ChessBoard, dep: u32) -> u64 {
     if dep <= 1 {
         return perft_tt(chessboard, dep, &mut PerftTranspositions::new(64));
@@ -298,6 +364,7 @@ fn perft_parallel(chessboard: &ChessBoard, dep: u32) -> u64 {
         .sum()
 }
 
+// regular perft function
 pub fn perft(chessboard: &ChessBoard, dep: u32) -> u64 {
     if dep == 0 {
         return 1;
