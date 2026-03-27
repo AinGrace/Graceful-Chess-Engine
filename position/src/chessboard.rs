@@ -11,6 +11,22 @@ use types::{
 
 use crate::{board::Board, fen::Fen, move_gen, zobrist};
 
+pub enum GameResult {
+    White,
+    Black,
+    Stalemate,
+    Unknown,
+}
+
+impl GameResult {
+    fn new_winner(side: Color) -> Self {
+        match side {
+            Color::White => Self::White,
+            Color::Black => Self::Black,
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct InvalidMoveError {
     mv: String,
@@ -47,6 +63,14 @@ pub enum PositionError {
     InvalidEnPassaunt,
     NoLegalMoves,
     InvalidPawn,
+}
+
+impl Error for PositionError {}
+
+impl Display for PositionError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        Debug::fmt(&self, f)
+    }
 }
 
 #[derive(Clone)]
@@ -208,6 +232,19 @@ impl ChessBoard {
     pub fn is_legal_move(&self, mv: Move) -> bool {
         let legal_moves = self.legal_moves();
         legal_moves.contains(&mv)
+    }
+
+    pub fn game_result(&self) -> GameResult {
+        if self.is_checkmate() {
+            return GameResult::new_winner(self.turn);
+        }
+
+        if self.is_stalemate() {
+            return GameResult::Stalemate;
+        }
+
+        // NOTE consider insufficient material situations
+        return GameResult::Unknown;
     }
 
     /// # PANICS
