@@ -74,6 +74,7 @@ fn gen_quiet_and_captures(pos: &ChessBoard, pin_info: &PinInfo, moves: &mut Move
     );
 }
 
+#[allow(clippy::too_many_arguments)]
 fn gen_pinned_quiet_and_capture_moves(
     pos: &ChessBoard,
     us: Color,
@@ -234,6 +235,7 @@ fn gen_pinned_quiet_and_capture_moves(
     });
 }
 
+#[allow(clippy::too_many_arguments)]
 fn gen_unpinned_quiet_and_capture_moves(
     pos: &ChessBoard,
     side: Color,
@@ -498,6 +500,7 @@ fn gen_castling_moves(pos: &ChessBoard, moves: &mut MoveList) {
             });
         }
     }
+
     if pos.castling_rights().long(our) {
         let d = Square::from_u32_checked(king_sqr.as_u32() - 1);
         let c = Square::from_u32_checked(king_sqr.as_u32() - 2);
@@ -878,7 +881,7 @@ mod pin_info {
 
             Self {
                 pinned_pieces,
-                pin_rays: pin_rays,
+                pin_rays,
                 squares,
                 len,
             }

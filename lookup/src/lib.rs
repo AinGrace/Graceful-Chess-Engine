@@ -494,21 +494,17 @@ const fn init_between_table() -> [[u64; 64]; 64] {
 }
 
 const fn bishop_rays(attacks_from: Square, occupied: Bitboard) -> u64 {
-    let attacks = ray_attacks_dir(&NW_RAYS, attacks_from, occupied, Direction::NorthWest)
+    ray_attacks_dir(&NW_RAYS, attacks_from, occupied, Direction::NorthWest)
         | ray_attacks_dir(&NE_RAYS, attacks_from, occupied, Direction::NorthEast)
         | ray_attacks_dir(&SW_RAYS, attacks_from, occupied, Direction::SouthWest)
-        | ray_attacks_dir(&SE_RAYS, attacks_from, occupied, Direction::SouthEast);
-
-    attacks
+        | ray_attacks_dir(&SE_RAYS, attacks_from, occupied, Direction::SouthEast)
 }
 
 const fn rook_rays(sqr: Square, occupied: Bitboard) -> u64 {
-    let attacks = ray_attacks_dir(&NO_RAYS, sqr, occupied, Direction::North)
+    ray_attacks_dir(&NO_RAYS, sqr, occupied, Direction::North)
         | ray_attacks_dir(&WE_RAYS, sqr, occupied, Direction::West)
         | ray_attacks_dir(&EA_RAYS, sqr, occupied, Direction::East)
-        | ray_attacks_dir(&SO_RAYS, sqr, occupied, Direction::South);
-
-    attacks
+        | ray_attacks_dir(&SO_RAYS, sqr, occupied, Direction::South)
 }
 
 const fn compute_between(from: Square, to: Square) -> u64 {

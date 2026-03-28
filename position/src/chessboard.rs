@@ -244,7 +244,7 @@ impl ChessBoard {
         }
 
         // NOTE consider insufficient material situations
-        return GameResult::Unknown;
+        GameResult::Unknown
     }
 
     /// # PANICS
@@ -372,7 +372,7 @@ impl ChessBoard {
         Fen {
             board: self.board.clone(),
             turn: self.turn,
-            castlings: self.castlings.clone(),
+            castlings: self.castlings,
             ep_square: self.ep_square,
             half_moves: self.half_moves,
             full_moves: self.full_moves,

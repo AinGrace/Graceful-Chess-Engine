@@ -43,9 +43,9 @@ impl Square {
     pub fn offset(self, by: i32) -> Option<Self> {
         let idx = self as i32 + by;
 
-        if idx >= 0 && idx < 64 {
+        if (0..64).contains(&idx) {
             // SAFETY: index is always at valid range
-            Some(unsafe { transmute(idx as u8) })
+            Some(unsafe { transmute::<u8, Self>(idx as u8) })
         } else {
             None
         }
@@ -82,7 +82,7 @@ impl Square {
 
     #[inline(always)]
     pub const fn abs_diff(left: Square, right: Square) -> u32 {
-        (left as i32 - right as i32).abs() as u32
+        (left as i32 - right as i32).unsigned_abs()
     }
 }
 

@@ -33,11 +33,7 @@ impl Direction {
     }
 
     pub const fn is_anti(&self) -> bool {
-        if self.offset().signum() == 1 {
-            true
-        } else {
-            false
-        }
+        self.offset().signum() == 1 
     }
 }
 
