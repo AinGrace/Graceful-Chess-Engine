@@ -1,6 +1,7 @@
 use std::{
     error::Error,
     fmt::{Debug, Display},
+    mem,
     num::NonZeroU32,
 };
 
@@ -366,6 +367,10 @@ impl ChessBoard {
 
         // change the playing side
         self.turn = !self.turn;
+    }
+
+    pub fn reset(&mut self) {
+        mem::take(self);
     }
 
     pub fn into_fen(&self) -> Fen {
