@@ -124,7 +124,7 @@ impl Move {
 
     #[rustfmt::skip]
     pub fn to_uci(&self) -> String {
-        let (from, to, promotion) = match *self {
+        let (from, to, maybe_prom) = match *self {
             Move::Standart { from, to, promotion, .. } => (from, to, promotion),
             Move::EnPassant { from, to } => (from, to, None),
             Move::Castling { king, rook } if matches!(rook, Square::A1 | Square::A8) => {
@@ -144,10 +144,9 @@ impl Move {
         buffer.push(to.file().char());
         buffer.push(to.rank().char());
 
-        if let Some(prom) = promotion {
+        if let Some(prom) = maybe_prom {
             buffer.push(prom.char());
         }
-
 
         buffer
     }
