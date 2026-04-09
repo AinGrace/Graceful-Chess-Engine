@@ -1,46 +1,49 @@
 use crate::{bitboard::Bitboard, color::Color, square::Square};
 
-#[derive(Clone, Copy)]
-pub struct ByColor {
-    white: Bitboard,
-    black: Bitboard,
+#[derive(Debug, Clone, Copy)]
+pub struct ByColor<T> {
+    white: T,
+    black: T,
 }
 
-impl ByColor {
-    pub fn new(white: Bitboard, black: Bitboard) -> Self {
+impl<T> ByColor<T> {
+    pub fn new(white: T, black: T) -> Self {
         Self { white, black }
     }
 
-    pub const fn get(&self, color: Color) -> Bitboard {
+    pub const fn get(&self, color: Color) -> &T {
         match color {
-            Color::White => self.white,
-            Color::Black => self.black,
+            Color::White => &self.white,
+            Color::Black => &self.black,
         }
     }
 
-    pub fn get_mut(&mut self, color: Color) -> &mut Bitboard {
+    pub fn get_mut(&mut self, color: Color) -> &mut T {
         match color {
             Color::White => &mut self.white,
             Color::Black => &mut self.black,
         }
     }
 
-    pub fn whites(&self) -> Bitboard {
-        self.white
+    pub fn whites(&self) -> &T {
+        &self.white
     }
 
-    pub fn whites_mut(&mut self) -> &mut Bitboard {
+    pub fn whites_mut(&mut self) -> &mut T {
         &mut self.white
     }
 
-    pub fn blacks(&self) -> Bitboard {
-        self.black
+    pub fn blacks(&self) -> &T {
+        &self.black
     }
 
-    pub fn blacks_mut(&mut self) -> &mut Bitboard {
+    pub fn blacks_mut(&mut self) -> &mut T {
         &mut self.black
     }
+}
 
+/// Specialization methods if ByColor contains Bitboard
+impl ByColor<Bitboard> {
     pub fn peek_color(&self, square: Square) -> Option<Color> {
         if self.white.is_square_set(square) {
             return Some(Color::White);
@@ -72,6 +75,8 @@ mod by_color_tests {
         color::Color,
         square::Square,
     };
+
+    type ByColor = super::ByColor<Bitboard>;
 
     fn fixture() -> ByColor {
         ByColor::new(Square::E1.to_bb(), Square::E8.to_bb())

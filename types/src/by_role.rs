@@ -1,24 +1,17 @@
 use crate::{bitboard::Bitboard, role::Role, square::Square};
 
 #[derive(Clone, Copy)]
-pub struct ByRole {
-    pawn: Bitboard,
-    knight: Bitboard,
-    bishop: Bitboard,
-    rook: Bitboard,
-    queen: Bitboard,
-    king: Bitboard,
+pub struct ByRole<T> {
+    pawn: T,
+    knight: T,
+    bishop: T,
+    rook: T,
+    queen: T,
+    king: T,
 }
 
-impl ByRole {
-    pub fn new(
-        pawn: Bitboard,
-        knight: Bitboard,
-        bishop: Bitboard,
-        rook: Bitboard,
-        queen: Bitboard,
-        king: Bitboard,
-    ) -> Self {
+impl<T> ByRole<T> {
+    pub fn new(pawn: T, knight: T, bishop: T, rook: T, queen: T, king: T) -> Self {
         Self {
             pawn,
             knight,
@@ -29,18 +22,18 @@ impl ByRole {
         }
     }
 
-    pub fn get(&self, role: Role) -> Bitboard {
+    pub fn get(&self, role: Role) -> &T {
         match role {
-            Role::Pawn => self.pawn,
-            Role::Knight => self.knight,
-            Role::Bishop => self.bishop,
-            Role::Rook => self.rook,
-            Role::Queen => self.queen,
-            Role::King => self.king,
+            Role::Pawn => &self.pawn,
+            Role::Knight => &self.knight,
+            Role::Bishop => &self.bishop,
+            Role::Rook => &self.rook,
+            Role::Queen => &self.queen,
+            Role::King => &self.king,
         }
     }
 
-    pub fn get_mut(&mut self, role: Role) -> &mut Bitboard {
+    pub fn get_mut(&mut self, role: Role) -> &mut T {
         match role {
             Role::Pawn => &mut self.pawn,
             Role::Knight => &mut self.knight,
@@ -51,54 +44,56 @@ impl ByRole {
         }
     }
 
-    pub fn pawns(&self) -> Bitboard {
-        self.pawn
+    pub fn pawns(&self) -> &T {
+        &self.pawn
     }
 
-    pub fn pawns_mut(&mut self) -> &mut Bitboard {
+    pub fn pawns_mut(&mut self) -> &mut T {
         &mut self.pawn
     }
 
-    pub fn knights(&self) -> Bitboard {
-        self.knight
+    pub fn knights(&self) -> &T {
+        &self.knight
     }
 
-    pub fn knights_mut(&mut self) -> &mut Bitboard {
+    pub fn knights_mut(&mut self) -> &mut T {
         &mut self.knight
     }
 
-    pub fn bishops(&self) -> Bitboard {
-        self.bishop
+    pub fn bishops(&self) -> &T {
+        &self.bishop
     }
 
-    pub fn bishops_mut(&mut self) -> &mut Bitboard {
+    pub fn bishops_mut(&mut self) -> &mut T {
         &mut self.bishop
     }
 
-    pub fn rooks(&self) -> Bitboard {
-        self.rook
+    pub fn rooks(&self) -> &T {
+        &self.rook
     }
 
-    pub fn rooks_mut(&mut self) -> &mut Bitboard {
+    pub fn rooks_mut(&mut self) -> &mut T {
         &mut self.rook
     }
 
-    pub fn queens(&self) -> Bitboard {
-        self.queen
+    pub fn queens(&self) -> &T {
+        &self.queen
     }
 
-    pub fn queens_mut(&mut self) -> &mut Bitboard {
+    pub fn queens_mut(&mut self) -> &mut T {
         &mut self.queen
     }
 
-    pub const fn kings(&self) -> Bitboard {
-        self.king
+    pub const fn kings(&self) -> &T {
+        &self.king
     }
 
-    pub fn kings_mut(&mut self) -> &mut Bitboard {
+    pub fn kings_mut(&mut self) -> &mut T {
         &mut self.king
     }
+}
 
+impl ByRole<Bitboard> {
     pub fn peek_role(&self, square: Square) -> Option<Role> {
         match self {
             Self { pawn, .. } if pawn.is_square_set(square) => Some(Role::Pawn),
@@ -143,6 +138,8 @@ mod by_role_tests {
         role::Role,
         square::Square,
     };
+
+    type ByRole = super::ByRole<Bitboard>;
 
     const ALL_ROLES: [Role; 6] = [
         Role::Pawn,

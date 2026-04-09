@@ -15,8 +15,8 @@ use types::{
 #[derive(Clone)]
 pub struct Board {
     occupied: Bitboard,
-    by_role: ByRole,
-    by_color: ByColor,
+    by_role: ByRole<Bitboard>,
+    by_color: ByColor<Bitboard>,
 }
 
 impl Board {
@@ -70,55 +70,55 @@ impl Board {
 
     #[inline(always)]
     pub fn whites(&self) -> Bitboard {
-        self.by_color.whites()
+        *self.by_color.whites()
     }
 
     #[inline(always)]
     pub fn blacks(&self) -> Bitboard {
-        self.by_color.blacks()
+        *self.by_color.blacks()
     }
 
     #[inline(always)]
     pub fn by_color(&self, color: Color) -> Bitboard {
-        self.by_color.get(color)
+        *self.by_color.get(color)
     }
 
     #[inline(always)]
     pub fn pawns(&self, color: Color) -> Bitboard {
-        let pawns = self.by_role.pawns();
-        let color_mask = self.by_color.get(color);
+        let pawns = *self.by_role.pawns();
+        let color_mask = *self.by_color.get(color);
 
         pawns & color_mask
     }
 
     #[inline(always)]
     pub fn knights(&self, color: Color) -> Bitboard {
-        let knights = self.by_role.knights();
-        let color_mask = self.by_color.get(color);
+        let knights = *self.by_role.knights();
+        let color_mask = *self.by_color.get(color);
 
         knights & color_mask
     }
 
     #[inline(always)]
     pub fn bishops(&self, color: Color) -> Bitboard {
-        let bishops = self.by_role.bishops();
-        let color_mask = self.by_color.get(color);
+        let bishops = *self.by_role.bishops();
+        let color_mask = *self.by_color.get(color);
 
         bishops & color_mask
     }
 
     #[inline(always)]
     pub fn rooks(&self, color: Color) -> Bitboard {
-        let rooks = self.by_role.rooks();
-        let color_mask = self.by_color.get(color);
+        let rooks = *self.by_role.rooks();
+        let color_mask = *self.by_color.get(color);
 
         rooks & color_mask
     }
 
     #[inline(always)]
     pub fn queens(&self, color: Color) -> Bitboard {
-        let queens = self.by_role.queens();
-        let color_mask = self.by_color.get(color);
+        let queens = *self.by_role.queens();
+        let color_mask = *self.by_color.get(color);
 
         queens & color_mask
     }
@@ -133,10 +133,10 @@ impl Board {
 
     #[inline(always)]
     pub fn king(&self, color: Color) -> Bitboard {
-        let kings = self.by_role.kings();
+        let kings = *self.by_role.kings();
         let color_mask = self.by_color.get(color);
 
-        kings & color_mask
+        kings & *color_mask
     }
 
     #[inline(always)]
@@ -296,6 +296,10 @@ impl Board {
         self.occupied = self.occupied.clear_square(square);
 
         Some(piece)
+    }
+
+    pub fn has_insufficient_material(&self) -> bool {
+        todo!()
     }
 }
 
