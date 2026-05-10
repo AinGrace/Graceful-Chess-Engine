@@ -298,8 +298,50 @@ impl Board {
         Some(piece)
     }
 
-    pub fn has_insufficient_material(&self) -> bool {
-        todo!()
+    pub fn is_insufficient_material(&self) -> bool {
+        if (*self.by_role.pawns() | *self.by_role.rooks() | *self.by_role.queens()).present() {
+            return false;
+        }
+
+        let w_sole_king = self.by_color(Color::White).popcnt() == 1;
+        let b_sole_king = self.by_color(Color::Black).popcnt() == 1;
+
+        if w_sole_king && b_sole_king {
+            return true;
+        }
+
+        let sole_bishop = |color: Color| self.bishops(color).popcnt() == 1;
+
+        let sole_bishop_or_knight = |color: Color| {
+            let sole_bishop = sole_bishop(color);
+            let sole_knight = self.knights(color).popcnt() == 1;
+
+            sole_knight || sole_bishop
+        };
+
+        if (w_sole_king && sole_bishop_or_knight(Color::Black))
+            || (b_sole_king && sole_bishop_or_knight(Color::White))
+        {
+            return true;
+        }
+
+        if sole_bishop(Color::White) && sole_bishop(Color::Black) {
+            let w_square_is_dark = self
+                .bishops(Color::White)
+                .first_square_checked()
+                .is_dark_square();
+
+            let b_square_is_dark = self
+                .bishops(Color::Black)
+                .first_square_checked()
+                .is_dark_square();
+
+            if w_square_is_dark == b_square_is_dark {
+                return true;
+            }
+        }
+
+        false
     }
 }
 

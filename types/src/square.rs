@@ -84,6 +84,11 @@ impl Square {
     pub const fn abs_diff(left: Square, right: Square) -> u32 {
         (left as i32 - right as i32).unsigned_abs()
     }
+
+    #[inline(always)]
+    pub const fn is_dark_square(self) -> bool {
+        self.as_u32() % 2 == 0
+    }
 }
 
 impl Display for Square {

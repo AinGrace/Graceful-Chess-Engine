@@ -15,7 +15,7 @@ use crate::{board::Board, fen::Fen, move_gen, zobrist};
 pub enum GameResult {
     White,
     Black,
-    Stalemate,
+    Draw,
     Unknown,
 }
 
@@ -74,6 +74,7 @@ impl Display for PositionError {
     }
 }
 
+/// introduce undo
 #[derive(Clone)]
 pub struct ChessBoard {
     board: Board,
@@ -241,10 +242,13 @@ impl ChessBoard {
         }
 
         if self.is_stalemate() {
-            return GameResult::Stalemate;
+            return GameResult::Draw;
         }
 
-        // NOTE consider insufficient material situations
+        if self.board().is_insufficient_material() {
+            return GameResult::Draw;
+        }
+
         GameResult::Unknown
     }
 
@@ -385,6 +389,8 @@ impl ChessBoard {
     }
 
     /// utility method used for debugging purposes
+    ///
+    /// lift up some restrictions for FEN
     pub fn health_check(&self) -> Result<(), PositionError> {
         let our = self.turn;
         let enemy = !our;
