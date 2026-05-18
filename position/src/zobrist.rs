@@ -93,7 +93,7 @@ pub fn update_hash(
     *hash ^= ZOBRIST.castlings[old_castling.as_usize()];
 
     match mv {
-        Move::Standart {
+        Move::Standard {
             role,
             from,
             to,

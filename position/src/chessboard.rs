@@ -1,4 +1,5 @@
 use std::{
+    collections::HashMap,
     error::Error,
     fmt::{Debug, Display},
     mem,
@@ -74,6 +75,16 @@ impl Display for PositionError {
     }
 }
 
+#[derive(Clone)]
+pub struct Undo {
+    m: Move,
+    castlings: Castlings,
+    ep_square: Option<Square>,
+    half_moves: u32,
+    full_moves: NonZeroU32,
+    zobrist_hash: u64,
+}
+
 /// introduce undo
 #[derive(Clone)]
 pub struct ChessBoard {
@@ -84,6 +95,9 @@ pub struct ChessBoard {
     half_moves: u32,
     full_moves: NonZeroU32,
     zobrist_hash: u64,
+    zobrist_hashes: HashMap<u64, u8>,
+
+    history: Vec<Undo>,
 }
 
 impl ChessBoard {
@@ -97,9 +111,13 @@ impl ChessBoard {
             half_moves: 0,
             full_moves: NonZeroU32::MIN,
             zobrist_hash: 0, // temporary value
+            zobrist_hashes: HashMap::new(),
+
+            history: vec![],
         };
 
-        pos.zobrist_hash = zobrist::compute_hash(&pos);
+        let z_hash = zobrist::compute_hash(&pos);
+        pos.zobrist_hash = z_hash;
         pos
     }
 
@@ -123,11 +141,16 @@ impl ChessBoard {
             half_moves,
             full_moves,
             zobrist_hash: 0, //temporary value
+            zobrist_hashes: HashMap::new(),
+
+            history: vec![],
         };
 
         pos.health_check()?;
 
-        pos.zobrist_hash = zobrist::compute_hash(&pos);
+        let z_hash = zobrist::compute_hash(&pos);
+        pos.zobrist_hash = z_hash;
+
         Ok(pos)
     }
 
@@ -186,7 +209,18 @@ impl ChessBoard {
     /// consider do_move_inner_checked if you can guarantee validity
     pub fn do_move(mut self, mv: Move) -> Result<Self, InvalidMoveError> {
         if self.is_legal_move(mv) {
+            let undo = Undo {
+                m: mv,
+                castlings: self.castlings,
+                ep_square: self.ep_square(),
+                half_moves: self.half_moves,
+                full_moves: self.full_moves,
+                zobrist_hash: self.zobrist_hash,
+            };
+
+            self.history.push(undo);
             self.do_move_inner(mv);
+
             Ok(self)
         } else {
             // TODO consider using long algebraic notation instead of uci
@@ -223,6 +257,91 @@ impl ChessBoard {
         self
     }
 
+    pub fn undo_move(&mut self) {
+        let Some(undo) = self.history.pop() else {
+            return;
+        };
+
+        self.turn = !self.turn;
+
+        let board = &mut self.board;
+        match undo.m {
+            Move::Standard {
+                role: _role,
+                from,
+                to,
+                capture,
+                promotion,
+            } => {
+                let our_piece = board
+                    .remove_piece_at(to)
+                    .expect("a piece is quaranteed to be there");
+
+                if promotion.is_some() {
+                    let our_pawn = if self.turn == Color::White {
+                        Piece::WPawn
+                    } else {
+                        Piece::BPawn
+                    };
+                    board.set_piece_at(our_pawn, from);
+                } else {
+                    board.set_piece_at(our_piece, from);
+                }
+
+                if let Some(captured) = capture {
+                    board.set_piece_at(captured.to_piece(!self.turn), to);
+                }
+            }
+            Move::EnPassant { from, to } => {
+                let our_pawn = board.remove_piece_at(to).expect("pawn is quaranteed to be");
+                let enemy_pawn = if self.turn == Color::White {
+                    Piece::WPawn
+                } else {
+                    Piece::BPawn
+                };
+
+                board.set_piece_at(our_pawn, from);
+                board.set_piece_at(enemy_pawn, Square::of(to.file(), from.rank()));
+            }
+            Move::Castling { king, rook } => {
+                let (king_dest, rook_dest) = match rook {
+                    Square::H1 => (Square::G1, Square::F1),
+                    Square::A1 => (Square::C1, Square::D1),
+                    Square::H8 => (Square::G8, Square::F8),
+                    Square::A8 => (Square::C8, Square::D8),
+                    _illegal => unreachable!("Illegal rook square for castling"),
+                };
+
+                let king_piece = board
+                    .remove_piece_at(king_dest)
+                    .expect("king is quaranteed to be");
+                let rook_piece = board
+                    .remove_piece_at(rook_dest)
+                    .expect("rook is quaranteed to be");
+
+                board.set_piece_at(king_piece, king);
+                board.set_piece_at(rook_piece, rook);
+            }
+        }
+
+        self.castlings = undo.castlings;
+        self.ep_square = undo.ep_square;
+        self.half_moves = undo.half_moves;
+        self.full_moves = undo.full_moves;
+
+        let current_hash = self.zobrist_hash;
+
+        if let Some(counter) = self.zobrist_hashes.get_mut(&current_hash) {
+            *counter -= 1;
+
+            if *counter == 0 {
+                self.zobrist_hashes.remove(&current_hash);
+            }
+        }
+
+        self.zobrist_hash = undo.zobrist_hash;
+    }
+
     /// parse uci string as ChessMove enum
     pub fn parse_uci(&self, raw_uci: &str) -> Option<Move> {
         self.legal_moves()
@@ -237,15 +356,23 @@ impl ChessBoard {
     }
 
     pub fn game_result(&self) -> GameResult {
-        if self.is_checkmate() {
-            return GameResult::new_winner(self.turn);
-        }
-
-        if self.is_stalemate() {
+        if self.board().is_insufficient_material() {
             return GameResult::Draw;
         }
 
-        if self.board().is_insufficient_material() {
+        if self.half_moves >= 100 {
+            return GameResult::Draw;
+        }
+
+        if self.zobrist_hashes.values().any(|val| *val >= 3) {
+            return GameResult::Draw;
+        }
+
+        if self.is_checkmate() {
+            return GameResult::new_winner(!self.turn);
+        }
+
+        if self.is_stalemate() {
             return GameResult::Draw;
         }
 
@@ -262,11 +389,8 @@ impl ChessBoard {
         let us = self.turn;
         let board = &mut self.board;
 
-        let old_ep = self.ep_square.take(); // remove the ep square
-        let old_castling = self.castlings;
-
         match mv {
-            Move::Standart {
+            Move::Standard {
                 role,
                 from,
                 to,
@@ -354,6 +478,9 @@ impl ChessBoard {
             }
         }
 
+        let old_ep = self.ep_square.take(); // remove the ep square
+        let old_castling = self.castlings;
+
         zobrist::update_hash(
             &mut self.zobrist_hash,
             mv,
@@ -363,6 +490,11 @@ impl ChessBoard {
             self.ep_square,
             self.castlings,
         );
+
+        self.zobrist_hashes
+            .entry(self.zobrist_hash)
+            .and_modify(|e| *e += 1)
+            .or_insert(1);
 
         // increment full_moves
         if us == Color::Black {

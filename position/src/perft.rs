@@ -4,6 +4,8 @@ use types::{MoveList, chess_move::Move, role::Role, square::Square};
 
 use crate::{chessboard::ChessBoard, fen::Fen, zobrist};
 
+// TODO: apply undo
+
 #[test]
 #[ignore = "to be onvoked manually for debugging"]
 fn perft_comparing() {
@@ -431,7 +433,7 @@ fn translate_move(their_move: TheirMove) -> Move {
             capture,
             to,
             promotion,
-        } => Move::Standart {
+        } => Move::Standard {
             role: Role::from_char(role.char()).unwrap(),
             from: Square::from_u32_checked(from.to_u32()),
             to: Square::from_u32_checked(to.to_u32()),

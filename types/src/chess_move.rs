@@ -1,4 +1,4 @@
-use crate::{role::Role, square::Square};
+use crate::{piece::Piece, role::Role, square::Square};
 
 pub enum CastlingSide {
     WShort,
@@ -9,7 +9,7 @@ pub enum CastlingSide {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Move {
-    Standart {
+    Standard {
         role: Role,
         from: Square,
         to: Square,
@@ -36,7 +36,7 @@ impl Move {
         capture: Option<Role>,
         promotion: Option<Role>,
     ) -> Self {
-        Self::Standart {
+        Self::Standard {
             role,
             from,
             to,
@@ -67,7 +67,7 @@ impl Move {
     }
 
     pub fn quiet(role: Role, from: Square, to: Square) -> Self {
-        Self::Standart {
+        Self::Standard {
             role,
             from,
             to,
@@ -77,7 +77,7 @@ impl Move {
     }
 
     pub fn capture(role: Role, from: Square, to: Square, capture: Role) -> Self {
-        Self::Standart {
+        Self::Standard {
             role,
             from,
             to,
@@ -87,7 +87,7 @@ impl Move {
     }
 
     pub fn promotion(from: Square, to: Square, promotion: Role) -> Self {
-        Self::Standart {
+        Self::Standard {
             role: Role::Pawn,
             from,
             to,
@@ -97,7 +97,7 @@ impl Move {
     }
 
     pub fn capture_promotion(from: Square, to: Square, capture: Role, promotion: Role) -> Self {
-        Self::Standart {
+        Self::Standard {
             role: Role::Pawn,
             from,
             to,
@@ -108,7 +108,7 @@ impl Move {
 
     pub fn from(&self) -> Square {
         match self {
-            Move::Standart { from, .. } => *from,
+            Move::Standard { from, .. } => *from,
             Move::EnPassant { from, .. } => *from,
             Move::Castling { king, .. } => *king,
         }
@@ -116,7 +116,7 @@ impl Move {
 
     pub fn to(&self) -> Square {
         match self {
-            Move::Standart { to, .. } => *to,
+            Move::Standard { to, .. } => *to,
             Move::EnPassant { to, .. } => *to,
             Move::Castling { rook, .. } => *rook,
         }
@@ -125,7 +125,7 @@ impl Move {
     #[rustfmt::skip]
     pub fn to_uci(&self) -> String {
         let (from, to, maybe_prom) = match *self {
-            Move::Standart { from, to, promotion, .. } => (from, to, promotion),
+            Move::Standard { from, to, promotion, .. } => (from, to, promotion),
             Move::EnPassant { from, to } => (from, to, None),
             Move::Castling { king, rook } if matches!(rook, Square::A1 | Square::A8) => {
                 (king, rook.offset_checked(2), None)

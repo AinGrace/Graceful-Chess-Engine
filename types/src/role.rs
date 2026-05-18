@@ -1,3 +1,8 @@
+use crate::{
+    color::{self, Color},
+    piece::Piece,
+};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Role {
     Pawn,
@@ -29,6 +34,23 @@ impl Role {
             Role::Rook => 'r',
             Role::Queen => 'q',
             Role::King => 'k',
+        }
+    }
+
+    pub fn to_piece(self, color: Color) -> Piece {
+        match (self, color) {
+            (Role::Pawn, Color::White) => Piece::WPawn,
+            (Role::Pawn, Color::Black) => Piece::BPawn,
+            (Role::Knight, Color::White) => Piece::WKnight,
+            (Role::Knight, Color::Black) => Piece::BKnight,
+            (Role::Bishop, Color::White) => Piece::WBishop,
+            (Role::Bishop, Color::Black) => Piece::BBishop,
+            (Role::Rook, Color::White) => Piece::WRook,
+            (Role::Rook, Color::Black) => Piece::BRook,
+            (Role::Queen, Color::White) => Piece::WQueen,
+            (Role::Queen, Color::Black) => Piece::BQueen,
+            (Role::King, Color::White) => Piece::WKing,
+            (Role::King, Color::Black) => Piece::BKing,
         }
     }
 }
