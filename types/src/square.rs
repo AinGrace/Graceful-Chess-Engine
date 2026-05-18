@@ -89,6 +89,11 @@ impl Square {
     pub const fn is_dark_square(self) -> bool {
         self.as_u32() % 2 == 0
     }
+
+    #[inline(always)]
+    pub const fn mirror_vertical(self) -> Self {
+        Self::from_u32_checked(self.as_u32() ^ 56)
+    }
 }
 
 impl Display for Square {
