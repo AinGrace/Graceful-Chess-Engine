@@ -1,4 +1,7 @@
-#![allow(long_running_const_eval)]
+#![expect(
+    long_running_const_eval,
+    reason = "Lookup tables take some time to generate during compile time"
+)]
 use std::arch::x86_64::_pext_u64;
 
 use types::{
