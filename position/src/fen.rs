@@ -28,7 +28,7 @@ impl Display for FenError {
 }
 
 /// A struct parsed from FEN string, modeling the position which may not be legal
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Fen {
     pub board: Board,
     pub turn: Color,

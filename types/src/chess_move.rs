@@ -7,6 +7,7 @@ pub enum CastlingSide {
     BLong,
 }
 
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Move {
     Standard {

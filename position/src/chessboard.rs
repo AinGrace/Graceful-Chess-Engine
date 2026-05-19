@@ -75,7 +75,7 @@ impl Display for PositionError {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct Undo {
     m: Move,
     castlings: Castlings,
@@ -86,7 +86,7 @@ pub struct Undo {
 }
 
 /// introduce undo
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct ChessBoard {
     board: Board,
     turn: Color,
@@ -209,16 +209,6 @@ impl ChessBoard {
     /// consider do_move_inner_checked if you can guarantee validity
     pub fn do_move(mut self, mv: Move) -> Result<Self, InvalidMoveError> {
         if self.is_legal_move(mv) {
-            let undo = Undo {
-                m: mv,
-                castlings: self.castlings,
-                ep_square: self.ep_square(),
-                half_moves: self.half_moves,
-                full_moves: self.full_moves,
-                zobrist_hash: self.zobrist_hash,
-            };
-
-            self.history.push(undo);
             self.do_move_inner(mv);
 
             Ok(self)
@@ -295,9 +285,9 @@ impl ChessBoard {
             Move::EnPassant { from, to } => {
                 let our_pawn = board.remove_piece_at(to).expect("pawn is quaranteed to be");
                 let enemy_pawn = if self.turn == Color::White {
-                    Piece::WPawn
-                } else {
                     Piece::BPawn
+                } else {
+                    Piece::WPawn
                 };
 
                 board.set_piece_at(our_pawn, from);
@@ -386,8 +376,22 @@ impl ChessBoard {
     ///
     /// **ANY** subsequent call of **ANY** method of ChessBoard can panic at **ANY** time
     pub fn do_move_inner(&mut self, mv: Move) {
+        let undo = Undo {
+            m: mv,
+            castlings: self.castlings,
+            ep_square: self.ep_square(),
+            half_moves: self.half_moves,
+            full_moves: self.full_moves,
+            zobrist_hash: self.zobrist_hash,
+        };
+
+        self.history.push(undo);
+
         let us = self.turn;
         let board = &mut self.board;
+
+        let old_ep = self.ep_square.take(); // remove the ep square
+        let old_castling = self.castlings;
 
         match mv {
             Move::Standard {
@@ -477,9 +481,6 @@ impl ChessBoard {
                 self.half_moves += 1;
             }
         }
-
-        let old_ep = self.ep_square.take(); // remove the ep square
-        let old_castling = self.castlings;
 
         zobrist::update_hash(
             &mut self.zobrist_hash,
@@ -622,6 +623,7 @@ mod tests {
 
     use types::chess_move::CastlingSide;
 
+    use rand::{prelude, seq::IndexedRandom};
     use super::*;
 
     #[test]
@@ -847,5 +849,185 @@ mod tests {
 
             assert_eq!(updated_hash, computed_hash);
         }
+    }
+
+    #[test]
+    fn undo_basic_move_restores_position() {
+        let mut board = ChessBoard::new();
+
+        let initial_hash = board.zobrist_hash();
+        let initial_fen = board.into_fen();
+
+        let mv = Move::quiet(Role::Pawn, Square::E2, Square::E4);
+
+        board = board.do_move(mv).unwrap();
+
+        assert_ne!(board.zobrist_hash(), initial_hash);
+
+        board.undo_move();
+
+        assert_eq!(board.zobrist_hash(), initial_hash);
+        assert_eq!(board.into_fen(), initial_fen);
+    }
+
+    #[test]
+    fn undo_capture_restores_piece() {
+        let mut board = ChessBoard::new();
+
+        board = board
+            .do_move(Move::quiet(Role::Pawn, Square::E2, Square::E4))
+            .unwrap();
+        board = board
+            .do_move(Move::quiet(Role::Pawn, Square::D7, Square::D5))
+            .unwrap();
+
+        let mv = Move::capture(Role::Pawn, Square::E4, Square::D5, Role::Pawn);
+
+        let before = board.clone();
+        let hash_before = board.zobrist_hash();
+
+        board = board.do_move(mv).unwrap();
+        board.undo_move();
+
+        assert_eq!(board, before);
+        assert_eq!(board.zobrist_hash(), hash_before);
+    }
+
+    #[test]
+    fn undo_promotion_restores_pawn() {
+        let mut board = ChessBoard::new();
+
+        board = board
+            .uci_move_checked("b2b4")
+            .uci_move_checked("a7a6")
+            .uci_move_checked("b4b5")
+            .uci_move_checked("h7h6")
+            .uci_move_checked("b5a6")
+            .uci_move_checked("h6h5")
+            .uci_move_checked("a6b7")
+            .uci_move_checked("h5h4");
+
+        let before = board.clone();
+
+        board = board
+            .do_move(Move::capture_promotion(
+                Square::B7,
+                Square::A8,
+                Role::Rook,
+                Role::Queen,
+            ))
+            .unwrap();
+
+        board.undo_move();
+
+        assert_eq!(board, before);
+    }
+
+    #[test]
+    fn undo_castling_restores_king_and_rook() {
+        let mut board = ChessBoard::new();
+
+        board = board
+            .uci_move_checked("e2e3")
+            .uci_move_checked("e7e6")
+            .uci_move_checked("f1d3")
+            .uci_move_checked("a7a6")
+            .uci_move_checked("g1f3")
+            .uci_move_checked("b7b6");
+
+        let before = board.clone();
+
+        board = board.do_move(Move::castling(CastlingSide::WShort)).unwrap();
+
+        board.undo_move();
+
+        assert_eq!(board, before);
+    }
+
+    #[test]
+    fn undo_en_passant_restores_captured_pawn() {
+        let mut board = ChessBoard::new();
+
+        board = board
+            .uci_move_checked("e2e4")
+            .uci_move_checked("a7a6")
+            .uci_move_checked("e4e5")
+            .uci_move_checked("d7d5");
+
+        let before = board.clone();
+
+        board = board
+            .do_move(Move::EnPassant {
+                from: Square::E5,
+                to: Square::D6,
+            })
+            .unwrap();
+
+        board.undo_move();
+
+        assert_eq!(board, before);
+    }
+
+    #[test]
+    fn undo_multiple_moves_restores_starting_position() {
+        let mut board = ChessBoard::new();
+
+        let before = board.clone();
+        let initial_hash = board.zobrist_hash();
+
+        let moves = [
+            Move::quiet(Role::Pawn, Square::E2, Square::E4),
+            Move::quiet(Role::Pawn, Square::E7, Square::E5),
+            Move::quiet(Role::Knight, Square::G1, Square::F3),
+        ];
+
+        for mv in moves {
+            board = board.do_move(mv).unwrap();
+        }
+
+        for _ in 0..3 {
+            board.undo_move();
+        }
+
+        assert_eq!(board.zobrist_hash(), initial_hash);
+        assert_eq!(board, before);
+    }
+
+    #[test]
+    fn undo_restores_turn_correctly() {
+        let mut board = ChessBoard::new();
+
+        let before = board.clone();
+        let start_turn = board.turn();
+
+        board = board
+            .do_move(Move::quiet(Role::Pawn, Square::E2, Square::E4))
+            .unwrap();
+
+        assert_ne!(board.turn(), start_turn);
+
+        board.undo_move();
+        assert_eq!(board.turn(), start_turn);
+        assert_eq!(board, before);
+    }
+
+    #[test]
+    fn random_move_undo_roundtrip() {
+        let mut board = ChessBoard::new();
+        let before = board.clone();
+
+        for _ in 0..100_000 {
+            let moves = board.legal_moves();
+            let mv = moves.choose(&mut rand::rng()).unwrap();
+            
+            let prev_hash = board.zobrist_hash();
+
+            board = board.do_move(*mv).unwrap();
+            board.undo_move();
+
+            assert_eq!(board.zobrist_hash(), prev_hash);
+        }
+
+        assert_eq!(board, before)
     }
 }

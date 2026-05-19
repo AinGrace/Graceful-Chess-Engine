@@ -3,7 +3,7 @@ use std::fmt::Display;
 
 use crate::color::Color;
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub struct Castlings(u8);
 
 impl Castlings {

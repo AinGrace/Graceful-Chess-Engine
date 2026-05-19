@@ -1,6 +1,6 @@
 use crate::{bitboard::Bitboard, color::Color, square::Square};
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ByColor<T> {
     white: T,
     black: T,

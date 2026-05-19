@@ -8,5 +8,7 @@ types = { path = "../types"}
 lookup = { path = "../lookup"}
 
 [dev-dependencies]
+rand = "0.10.1"
 rayon = "1.11.0"
 shakmaty = "0.30.0"
+

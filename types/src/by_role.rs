@@ -1,6 +1,6 @@
 use crate::{bitboard::Bitboard, role::Role, square::Square};
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub struct ByRole<T> {
     pawn: T,
     knight: T,

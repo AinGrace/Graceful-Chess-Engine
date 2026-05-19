@@ -12,7 +12,7 @@ use types::{
     square::Square,
 };
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct Board {
     occupied: Bitboard,
     by_role: ByRole<Bitboard>,
