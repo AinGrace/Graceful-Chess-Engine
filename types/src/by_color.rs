@@ -69,7 +69,7 @@ impl ByColor<Bitboard> {
 
 #[cfg(test)]
 mod by_color_tests {
-    use super::*;
+    
     use crate::{
         bitboard::{Bitboard, ToBitboard},
         color::Color,

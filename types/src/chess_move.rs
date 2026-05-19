@@ -1,4 +1,4 @@
-use crate::{piece::Piece, role::Role, square::Square};
+use crate::{role::Role, square::Square};
 
 pub enum CastlingSide {
     WShort,

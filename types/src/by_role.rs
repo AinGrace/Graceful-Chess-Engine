@@ -132,7 +132,7 @@ impl ByRole<Bitboard> {
 
 #[cfg(test)]
 mod by_role_tests {
-    use super::*;
+    
     use crate::{
         bitboard::{Bitboard, ToBitboard},
         role::Role,

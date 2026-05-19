@@ -1,4 +1,4 @@
-use position::chessboard::ChessBoard;
+use position::position::Position;
 use types::{
     color::{self, Color},
     piece::{self, Piece},
@@ -127,14 +127,14 @@ mod constants {
     ];
 }
 
-pub fn full_eval(pos: &ChessBoard) -> i32 {
+pub fn full_eval(pos: &Position) -> i32 {
     let mobility = mobility(pos);
     let material = material_score(pos);
     let pst = calculate_pst_score(pos);
 
     #[cfg(test)]
     {
-        println!("Mobility -> {mobility} | Material -> {material} | PST -> {pst}");
+        // println!("Mobility -> {mobility} | Material -> {material} | PST -> {pst}");
     }
 
     let score = mobility + material + pst;
@@ -146,18 +146,18 @@ pub fn full_eval(pos: &ChessBoard) -> i32 {
     }
 }
 
-pub fn incremental_eval(pos: &ChessBoard, score: i32) -> i32 {
+pub fn incremental_eval(pos: &Position, score: i32) -> i32 {
     todo!()
 }
 
-fn mobility(pos: &ChessBoard) -> i32 {
+fn mobility(pos: &Position) -> i32 {
     // TODO: good mobility algorithm requires ChessBoard::legal_moves()
     // to be able to generate moves for both sides
     // not only for side to move
     0
 }
 
-fn material_score(pos: &ChessBoard) -> i32 {
+fn material_score(pos: &Position) -> i32 {
     let white = Color::White;
     let black = Color::Black;
 
@@ -176,7 +176,7 @@ fn material_score(pos: &ChessBoard) -> i32 {
     (white_score as i32) - (black_score as i32)
 }
 
-fn calculate_pst_score(pos: &ChessBoard) -> i32 {
+fn calculate_pst_score(pos: &Position) -> i32 {
     let white = Color::White;
     let black = Color::Black;
     let board = pos.board();
@@ -254,7 +254,7 @@ mod tests {
 
     #[test]
     fn eval_test() {
-        let mut board = ChessBoard::new();
+        let mut pos = Position::new();
         let moves = vec![
             Move::quiet(Role::Pawn, Square::D2, Square::D4),
             Move::quiet(Role::Pawn, Square::D7, Square::D5),
@@ -323,9 +323,9 @@ mod tests {
 
         for mv in moves.into_iter() {
             println!("Making move -> {mv:?}");
-            board = board.do_move(mv).unwrap();
-            dbg!(&board);
-            dbg!(full_eval(&board));
+            let _undo = pos.do_move(mv).unwrap();
+            dbg!(&pos);
+            dbg!(full_eval(&pos));
             println!();
             println!();
             println!();

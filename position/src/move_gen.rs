@@ -13,9 +13,9 @@ use types::{
     square::Square,
 };
 
-use crate::{chessboard::ChessBoard, move_gen::pin_info::PinInfo};
+use crate::{position::Position, move_gen::pin_info::PinInfo};
 
-pub fn gen_legal_moves(pos: &ChessBoard) -> MoveList {
+pub fn gen_legal_moves(pos: &Position) -> MoveList {
     let mut moves = MoveList::new();
     let king_checkers = pos.checkers(pos.turn());
     let king_sqr = pos.board().the_king(pos.turn());
@@ -35,7 +35,7 @@ pub fn gen_legal_moves(pos: &ChessBoard) -> MoveList {
     moves
 }
 
-fn gen_quiet_and_captures(pos: &ChessBoard, pin_info: &PinInfo, moves: &mut MoveList) {
+fn gen_quiet_and_captures(pos: &Position, pin_info: &PinInfo, moves: &mut MoveList) {
     let us = pos.turn();
 
     let board = pos.board();
@@ -76,7 +76,7 @@ fn gen_quiet_and_captures(pos: &ChessBoard, pin_info: &PinInfo, moves: &mut Move
 
 #[allow(clippy::too_many_arguments)]
 fn gen_pinned_quiet_and_capture_moves(
-    pos: &ChessBoard,
+    pos: &Position,
     us: Color,
     pawns: Bitboard,
     bishops: Bitboard,
@@ -237,7 +237,7 @@ fn gen_pinned_quiet_and_capture_moves(
 
 #[allow(clippy::too_many_arguments)]
 fn gen_unpinned_quiet_and_capture_moves(
-    pos: &ChessBoard,
+    pos: &Position,
     side: Color,
     pawns: Bitboard,
     knights: Bitboard,
@@ -474,7 +474,7 @@ fn gen_unpinned_quiet_and_capture_moves(
     });
 }
 
-fn gen_castling_moves(pos: &ChessBoard, moves: &mut MoveList) {
+fn gen_castling_moves(pos: &Position, moves: &mut MoveList) {
     let our = pos.turn();
     let enemy = !our;
     let board = pos.board();
@@ -521,7 +521,7 @@ fn gen_castling_moves(pos: &ChessBoard, moves: &mut MoveList) {
     }
 }
 
-pub fn gen_ep_moves(pos: &ChessBoard, moves: &mut MoveList) {
+pub fn gen_ep_moves(pos: &Position, moves: &mut MoveList) {
     let Some(ep) = pos.ep_square() else {
         return;
     };
@@ -575,7 +575,7 @@ pub fn gen_ep_moves(pos: &ChessBoard, moves: &mut MoveList) {
 }
 
 fn gen_evasions(
-    pos: &ChessBoard,
+    pos: &Position,
     king_sqr: Square,
     checker: Bitboard,
     pinned: Bitboard,
@@ -596,7 +596,7 @@ fn gen_evasions(
 }
 
 // NOTE consider calculating via enemy piece attack maps in order to avoid branches
-fn gen_king_moves(pos: &ChessBoard, king_sqr: Square, moves: &mut MoveList) {
+fn gen_king_moves(pos: &Position, king_sqr: Square, moves: &mut MoveList) {
     let board = pos.board();
     let us = pos.turn();
 
@@ -626,7 +626,7 @@ fn gen_king_moves(pos: &ChessBoard, king_sqr: Square, moves: &mut MoveList) {
 }
 
 fn gen_blocking_moves(
-    pos: &ChessBoard,
+    pos: &Position,
     evasion_mask: Bitboard,
     checker: Square,
     pinned: Bitboard,
@@ -723,7 +723,7 @@ fn gen_blocking_moves(
     });
 }
 
-fn gen_ep_evasions(pos: &ChessBoard, checker: Square, pinned: Bitboard, moves: &mut MoveList) {
+fn gen_ep_evasions(pos: &Position, checker: Square, pinned: Bitboard, moves: &mut MoveList) {
     let Some(ep_sqr) = pos.ep_square() else {
         return;
     };
@@ -773,7 +773,7 @@ fn gen_ep_evasions(pos: &ChessBoard, checker: Square, pinned: Bitboard, moves: &
     });
 }
 
-fn king_move_is_safe(pos: &ChessBoard, from: Square, to: Square) -> bool {
+fn king_move_is_safe(pos: &Position, from: Square, to: Square) -> bool {
     let our = pos.turn();
     let enemy = !our;
     let board = pos.board();
@@ -802,7 +802,7 @@ mod pin_info {
         square::Square,
     };
 
-    use crate::chessboard::ChessBoard;
+    use crate::position::Position;
 
     #[derive(Debug)]
     pub struct PinInfo {
@@ -837,7 +837,7 @@ mod pin_info {
             self.pinned_pieces
         }
 
-        pub fn compute(pos: &ChessBoard) -> Self {
+        pub fn compute(pos: &Position) -> Self {
             let us = pos.turn();
             let them = !us;
 

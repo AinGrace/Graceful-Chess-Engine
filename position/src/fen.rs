@@ -11,7 +11,7 @@ use types::{
 
 use crate::{
     board::Board,
-    chessboard::{ChessBoard, PositionError},
+    position::{Position, PositionError},
 };
 
 // TODO make enum
@@ -61,8 +61,8 @@ impl Fen {
         })
     }
 
-    pub fn into_chessboard(self) -> Result<ChessBoard, PositionError> {
-        ChessBoard::from_fen(self)
+    pub fn into_position(self) -> Result<Position, PositionError> {
+        Position::from_fen(self)
     }
 
     fn board_to_fen_position_setup(&self) -> String {

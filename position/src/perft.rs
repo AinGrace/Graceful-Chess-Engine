@@ -1,8 +1,8 @@
 use rayon::prelude::*;
-use shakmaty::{Chess, Move as TheirMove, Position, fen::Fen as TheirFen};
+use shakmaty::{Chess, Move as TheirMove, Position as TheirPosition, fen::Fen as TheirFen};
 use types::{MoveList, chess_move::Move, role::Role, square::Square};
 
-use crate::{chessboard::ChessBoard, fen::Fen, zobrist};
+use crate::{position::Position, fen::Fen, zobrist};
 
 // TODO: apply undo
 
@@ -16,7 +16,7 @@ fn perft_comparing() {
     let other_chessboard = their_fen
         .into_position::<Chess>(shakmaty::CastlingMode::Standard)
         .unwrap();
-    let chessboard: ChessBoard = our_fen.into_chessboard().unwrap();
+    let chessboard: Position = our_fen.into_position().unwrap();
 
     let res = perft_comparing_inner(
         HistoryChessBoard {
@@ -35,7 +35,7 @@ fn perft_comparing() {
 fn mismatch_test() {
     let raw_fen = "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1";
     let fen: Fen = raw_fen.parse().unwrap();
-    let mut chessboard: ChessBoard = fen.into_chessboard().unwrap();
+    let mut chessboard: Position = fen.into_position().unwrap();
 
     chessboard.do_move_inner(Move::capture(
         Role::Pawn,
@@ -53,64 +53,64 @@ fn mismatch_test() {
 
 #[test]
 fn perft_depth_0_equals_1() {
-    let chessboard = ChessBoard::new();
+    let chessboard = Position::new();
     let res = perft(&chessboard, 0);
     assert_eq!(res, 1);
 }
 
 #[test]
 fn perft_depth_1_equals_20() {
-    let chessboard = ChessBoard::new();
+    let chessboard = Position::new();
     let res = perft(&chessboard, 1);
     assert_eq!(res, 20);
 }
 
 #[test]
 fn perft_depth_2_equals_400() {
-    let chessboard = ChessBoard::new();
+    let chessboard = Position::new();
     let res = perft(&chessboard, 2);
     assert_eq!(res, 400);
 }
 
 #[test]
 fn perft_depth_3_equals_8_902() {
-    let chessboard = ChessBoard::new();
+    let chessboard = Position::new();
     let res = perft(&chessboard, 3);
     assert_eq!(res, 8902);
 }
 
 #[test]
 fn perft_depth_4_equals_197_281() {
-    let chessboard = ChessBoard::new();
+    let chessboard = Position::new();
     let res = perft(&chessboard, 4);
     assert_eq!(res, 197281);
 }
 
 #[test]
 fn perft_depth_5_equals_4_865_609() {
-    let chessboard = ChessBoard::new();
+    let chessboard = Position::new();
     let res = perft(&chessboard, 5);
     assert_eq!(res, 4865609);
 }
 
 #[test]
 fn perft_depth_6_equals_119_060_324() {
-    let chessboard = ChessBoard::new();
+    let chessboard = Position::new();
     let res = perft(&chessboard, 6);
     assert_eq!(res, 119060324);
 }
 
 #[test]
 fn perft_depth_7_equals_3_195_901_860() {
-    let chessboard = ChessBoard::new();
-    let res = perft(&chessboard, 7);
+    let mut chessboard = Position::new();
+    let res = perft_make_unmake(&mut chessboard, 7);
     assert_eq!(res, 3195901860);
 }
 
 #[test]
 #[ignore]
 fn perft_depth_8_equals_84_998_978_956() {
-    let chessboard = ChessBoard::new();
+    let chessboard = Position::new();
     let res = perft_parallel(&chessboard, 8);
     assert_eq!(res, 84_998_978_956);
 }
@@ -119,7 +119,7 @@ fn perft_depth_8_equals_84_998_978_956() {
 fn perft_custom_position_1() {
     let raw_fen = "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1";
 
-    let chessboard: ChessBoard = Fen::new(raw_fen).unwrap().into_chessboard().unwrap();
+    let chessboard: Position = Fen::new(raw_fen).unwrap().into_position().unwrap();
 
     assert_eq!(perft(&chessboard.clone(), 1), 48);
     assert_eq!(perft(&chessboard.clone(), 2), 2039);
@@ -133,7 +133,7 @@ fn perft_custom_position_1() {
 fn perft_custom_position_2() {
     let raw_fen = "8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1 ";
 
-    let chessboard = Fen::new(raw_fen).unwrap().into_chessboard().unwrap();
+    let chessboard = Fen::new(raw_fen).unwrap().into_position().unwrap();
 
     assert_eq!(perft(&chessboard.clone(), 1), 14);
     assert_eq!(perft(&chessboard.clone(), 2), 191);
@@ -149,7 +149,7 @@ fn perft_custom_position_2() {
 fn perft_custom_position_3() {
     let raw_fen = "r3k2r/Pppp1ppp/1b3nbN/nP6/BBP1P3/q4N2/Pp1P2PP/R2Q1RK1 w kq - 0 1";
 
-    let chessboard = Fen::new(raw_fen).unwrap().into_chessboard().unwrap();
+    let chessboard = Fen::new(raw_fen).unwrap().into_position().unwrap();
 
     assert_eq!(perft(&chessboard.clone(), 1), 6);
     assert_eq!(perft(&chessboard.clone(), 2), 264);
@@ -163,7 +163,7 @@ fn perft_custom_position_3() {
 fn perft_custom_position_4() {
     let raw_fen = "rnbq1k1r/pp1Pbppp/2p5/8/2B5/8/PPP1NnPP/RNBQK2R w KQ - 1 8";
 
-    let chessboard = Fen::new(raw_fen).unwrap().into_chessboard().unwrap();
+    let chessboard = Fen::new(raw_fen).unwrap().into_position().unwrap();
 
     assert_eq!(perft(&chessboard.clone(), 1), 44);
     assert_eq!(perft(&chessboard.clone(), 2), 1486);
@@ -177,7 +177,7 @@ fn perft_custom_position_4() {
 fn perft_custom_position_5() {
     let raw_fen = "r4rk1/1pp1qppp/p1np1n2/2b1p1B1/2B1P1b1/P1NP1N2/1PP1QPPP/R4RK1 w - - 0 10";
 
-    let chessboard = Fen::new(raw_fen).unwrap().into_chessboard().unwrap();
+    let chessboard = Fen::new(raw_fen).unwrap().into_position().unwrap();
 
     assert_eq!(perft(&chessboard.clone(), 1), 46);
     assert_eq!(perft(&chessboard.clone(), 2), 2079);
@@ -194,7 +194,7 @@ fn perft_suite() {
 
     suite.entries.into_iter().for_each(|entry| {
         let fen = entry.fen;
-        let chessboard = fen.clone().into_chessboard().expect("Fen should be valid");
+        let chessboard = fen.clone().into_position().expect("Fen should be valid");
 
         entry
             .depth_values
@@ -213,7 +213,7 @@ fn perft_suite() {
 /// a wrapper around ChessBoard that preserves the move history
 #[derive(Debug, Clone)]
 struct HistoryChessBoard {
-    inner: ChessBoard,
+    inner: Position,
     history: Vec<Move>,
 }
 
@@ -319,7 +319,7 @@ impl PerftSuite {
 }
 
 // a perft functions with transposition table
-fn perft_tt(chessboard: &ChessBoard, dep: u32, tt: &mut PerftTranspositions) -> u64 {
+fn perft_tt(chessboard: &Position, dep: u32, tt: &mut PerftTranspositions) -> u64 {
     if dep == 0 {
         return 1;
     }
@@ -349,7 +349,7 @@ fn perft_tt(chessboard: &ChessBoard, dep: u32, tt: &mut PerftTranspositions) -> 
 }
 
 // a parallel perft
-fn perft_parallel(chessboard: &ChessBoard, dep: u32) -> u64 {
+fn perft_parallel(chessboard: &Position, dep: u32) -> u64 {
     if dep <= 1 {
         return perft_tt(chessboard, dep, &mut PerftTranspositions::new(64));
     }
@@ -367,7 +367,31 @@ fn perft_parallel(chessboard: &ChessBoard, dep: u32) -> u64 {
 }
 
 // regular perft function
-pub fn perft(chessboard: &ChessBoard, dep: u32) -> u64 {
+pub fn perft_make_unmake(pos: &mut Position, dep: u32) -> u64 {
+    if dep == 0 {
+        return 1;
+    }
+
+    let moves = pos.legal_moves();
+
+    if dep == 1 {
+        return moves.len() as u64;
+    }
+
+    moves
+        .iter()
+        .map(|move_| {
+            let undo = pos.do_move_inner(*move_);
+            let nodes = perft(pos, dep - 1);
+            pos.undo_move(undo);
+
+            nodes
+        })
+        .sum()
+}
+
+// regular perft function
+pub fn perft(chessboard: &Position, dep: u32) -> u64 {
     if dep == 0 {
         return 1;
     }

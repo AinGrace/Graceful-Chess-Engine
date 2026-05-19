@@ -32,7 +32,7 @@ impl GameResult {
 #[derive(Debug)]
 pub struct InvalidMoveError {
     mv: String,
-    board: ChessBoard,
+    pos: Position,
 }
 
 impl Error for InvalidMoveError {}
@@ -48,12 +48,12 @@ impl InvalidMoveError {
         &self.mv
     }
 
-    pub fn chessboard_ref(&self) -> &ChessBoard {
-        &self.board
+    pub fn chessboard_ref(&self) -> &Position {
+        &self.pos
     }
 
-    pub fn chessboard(self) -> ChessBoard {
-        self.board
+    pub fn chessboard(self) -> Position {
+        self.pos
     }
 }
 
@@ -85,9 +85,8 @@ pub struct Undo {
     zobrist_hash: u64,
 }
 
-/// introduce undo
 #[derive(Clone, PartialEq, Eq)]
-pub struct ChessBoard {
+pub struct Position {
     board: Board,
     turn: Color,
     castlings: Castlings,
@@ -95,12 +94,9 @@ pub struct ChessBoard {
     half_moves: u32,
     full_moves: NonZeroU32,
     zobrist_hash: u64,
-    zobrist_hashes: HashMap<u64, u8>,
-
-    history: Vec<Undo>,
 }
 
-impl ChessBoard {
+impl Position {
     /// create a new chessboard with standart position
     pub fn new() -> Self {
         let mut pos = Self {
@@ -111,9 +107,6 @@ impl ChessBoard {
             half_moves: 0,
             full_moves: NonZeroU32::MIN,
             zobrist_hash: 0, // temporary value
-            zobrist_hashes: HashMap::new(),
-
-            history: vec![],
         };
 
         let z_hash = zobrist::compute_hash(&pos);
@@ -141,9 +134,6 @@ impl ChessBoard {
             half_moves,
             full_moves,
             zobrist_hash: 0, //temporary value
-            zobrist_hashes: HashMap::new(),
-
-            history: vec![],
         };
 
         pos.health_check()?;
@@ -206,52 +196,43 @@ impl ChessBoard {
 
     /// Checks move for legality and then executes it
     ///
-    /// consider do_move_inner_checked if you can guarantee validity
-    pub fn do_move(mut self, mv: Move) -> Result<Self, InvalidMoveError> {
+    /// consider do_move_inner_checked if you can guarantee validity TODO
+    pub fn do_move(&mut self, mv: Move) -> Result<Undo, InvalidMoveError> {
         if self.is_legal_move(mv) {
-            self.do_move_inner(mv);
-
-            Ok(self)
+            Ok(self.do_move_inner(mv))
         } else {
             // TODO consider using long algebraic notation instead of uci
             Err(InvalidMoveError {
                 mv: mv.to_uci(),
-                board: self,
+                pos: self.clone(),
             })
         }
     }
 
     /// parse uci string and execute it
-    pub fn uci_move(mut self, raw_uci: &str) -> Result<Self, InvalidMoveError> {
+    pub fn uci_move(&mut self, raw_uci: &str) -> Result<Undo, InvalidMoveError> {
         let uci_move = match self.parse_uci(raw_uci) {
             Some(uci_move) => uci_move,
             None => {
                 return Err(InvalidMoveError {
                     mv: raw_uci.into(),
-                    board: self,
+                    pos: self.clone(),
                 });
             }
         };
 
-        self.do_move_inner(uci_move);
-
-        Ok(self)
+        Ok(self.do_move_inner(uci_move))
     }
 
-    pub fn uci_move_checked(mut self, raw_uci: &str) -> Self {
-        let uci_move = self
-            .parse_uci(raw_uci)
-            .expect("caller quarantees validity of raw_uci");
+    pub fn uci_move_checked(&mut self, raw_uci: &str) -> Undo {
+        let uci_move = self.parse_uci(raw_uci).expect(&format!(
+            "caller quarantees the validity of raw_uci {raw_uci}"
+        ));
 
-        self.do_move_inner(uci_move);
-        self
+        self.do_move_inner(uci_move)
     }
 
-    pub fn undo_move(&mut self) {
-        let Some(undo) = self.history.pop() else {
-            return;
-        };
-
+    pub fn undo_move(&mut self, undo: Undo) {
         self.turn = !self.turn;
 
         let board = &mut self.board;
@@ -318,17 +299,6 @@ impl ChessBoard {
         self.ep_square = undo.ep_square;
         self.half_moves = undo.half_moves;
         self.full_moves = undo.full_moves;
-
-        let current_hash = self.zobrist_hash;
-
-        if let Some(counter) = self.zobrist_hashes.get_mut(&current_hash) {
-            *counter -= 1;
-
-            if *counter == 0 {
-                self.zobrist_hashes.remove(&current_hash);
-            }
-        }
-
         self.zobrist_hash = undo.zobrist_hash;
     }
 
@@ -345,29 +315,30 @@ impl ChessBoard {
         legal_moves.contains(&mv)
     }
 
-    pub fn game_result(&self) -> GameResult {
-        if self.board().is_insufficient_material() {
-            return GameResult::Draw;
-        }
+    /// TODO: move to ChessBoard
+    // pub fn game_result(&self) -> GameResult {
+    //     if self.board().is_insufficient_material() {
+    //         return GameResult::Draw;
+    //     }
 
-        if self.half_moves >= 100 {
-            return GameResult::Draw;
-        }
+    //     if self.half_moves >= 100 {
+    //         return GameResult::Draw;
+    //     }
 
-        if self.zobrist_hashes.values().any(|val| *val >= 3) {
-            return GameResult::Draw;
-        }
+    //     if self.zobrist_hashes.values().any(|val| *val >= 3) {
+    //         return GameResult::Draw;
+    //     }
 
-        if self.is_checkmate() {
-            return GameResult::new_winner(!self.turn);
-        }
+    //     if self.is_checkmate() {
+    //         return GameResult::new_winner(!self.turn);
+    //     }
 
-        if self.is_stalemate() {
-            return GameResult::Draw;
-        }
+    //     if self.is_stalemate() {
+    //         return GameResult::Draw;
+    //     }
 
-        GameResult::Unknown
-    }
+    //     GameResult::Unknown
+    // }
 
     /// # PANICS
     /// Calling this method without validity quarantees by the caller may corrupt the state of ChessBoard
@@ -375,7 +346,7 @@ impl ChessBoard {
     /// which may lead to following:
     ///
     /// **ANY** subsequent call of **ANY** method of ChessBoard can panic at **ANY** time
-    pub fn do_move_inner(&mut self, mv: Move) {
+    pub fn do_move_inner(&mut self, mv: Move) -> Undo {
         let undo = Undo {
             m: mv,
             castlings: self.castlings,
@@ -384,8 +355,6 @@ impl ChessBoard {
             full_moves: self.full_moves,
             zobrist_hash: self.zobrist_hash,
         };
-
-        self.history.push(undo);
 
         let us = self.turn;
         let board = &mut self.board;
@@ -492,11 +461,6 @@ impl ChessBoard {
             self.castlings,
         );
 
-        self.zobrist_hashes
-            .entry(self.zobrist_hash)
-            .and_modify(|e| *e += 1)
-            .or_insert(1);
-
         // increment full_moves
         if us == Color::Black {
             self.full_moves = self.full_moves.saturating_add(1);
@@ -504,6 +468,8 @@ impl ChessBoard {
 
         // change the playing side
         self.turn = !self.turn;
+
+        undo
     }
 
     pub fn reset(&mut self) {
@@ -599,7 +565,7 @@ impl ChessBoard {
     }
 }
 
-impl Debug for ChessBoard {
+impl Debug for Position {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("ChessBoard")
             .field("board", &self.board)
@@ -612,7 +578,7 @@ impl Debug for ChessBoard {
     }
 }
 
-impl Default for ChessBoard {
+impl Default for Position {
     fn default() -> Self {
         Self::new()
     }
@@ -623,12 +589,12 @@ mod tests {
 
     use types::chess_move::CastlingSide;
 
-    use rand::{prelude, seq::IndexedRandom};
     use super::*;
+    use rand::{prelude, seq::IndexedRandom};
 
     #[test]
     fn real_game_test() {
-        let mut board = ChessBoard::new();
+        let mut board = Position::new();
         println!("{board:#?}");
 
         let moves = vec![
@@ -698,83 +664,82 @@ mod tests {
         ];
 
         for mv in moves.into_iter() {
-            board = board.do_move(mv).unwrap();
+            let _undo = board.do_move(mv).unwrap();
         }
     }
 
     #[test]
     fn real_game_uci_moves_test() {
-        let board = ChessBoard::new();
+        let mut pos = Position::new();
 
-        board
-            .uci_move_checked("d2d4")
-            .uci_move_checked("d7d5")
-            .uci_move_checked("g1f3")
-            .uci_move_checked("b8c6")
-            .uci_move_checked("b1c3")
-            .uci_move_checked("g8f6")
-            .uci_move_checked("e2e3")
-            .uci_move_checked("e7e6")
-            .uci_move_checked("a2a3")
-            .uci_move_checked("g7g6")
-            .uci_move_checked("f1b5")
-            .uci_move_checked("a7a6")
-            .uci_move_checked("b5c6")
-            .uci_move_checked("b7c6")
-            .uci_move_checked("f3e5")
-            .uci_move_checked("d8d6")
-            .uci_move_checked("f2f3")
-            .uci_move_checked("c6c5")
-            .uci_move_checked("e1g1")
-            .uci_move_checked("c5c4")
-            .uci_move_checked("e3e4")
-            .uci_move_checked("c7c6")
-            .uci_move_checked("c1f4")
-            .uci_move_checked("a6a5")
-            .uci_move_checked("c3a4")
-            .uci_move_checked("f6h5")
-            .uci_move_checked("d1d2")
-            .uci_move_checked("f7f5")
-            .uci_move_checked("e4f5")
-            .uci_move_checked("e6f5")
-            .uci_move_checked("f1e1")
-            .uci_move_checked("c8d7")
-            .uci_move_checked("e5c6")
-            .uci_move_checked("e8f7")
-            .uci_move_checked("f4d6")
-            .uci_move_checked("f8d6")
-            .uci_move_checked("c6e5")
-            .uci_move_checked("f7g7")
-            .uci_move_checked("e5d7")
-            .uci_move_checked("h7h6")
-            .uci_move_checked("a4b6")
-            .uci_move_checked("a8a7")
-            .uci_move_checked("d7c5")
-            .uci_move_checked("d6f4")
-            .uci_move_checked("c5e6")
-            .uci_move_checked("g7f6")
-            .uci_move_checked("e6f4")
-            .uci_move_checked("h5f4")
-            .uci_move_checked("d2f4")
-            .uci_move_checked("g6g5")
-            .uci_move_checked("f4e5")
-            .uci_move_checked("f6f7")
-            .uci_move_checked("e5h8")
-            .uci_move_checked("f7g6")
-            .uci_move_checked("g2g4")
-            .uci_move_checked("a7h7")
-            .uci_move_checked("h8h7")
-            .uci_move_checked("g6h7")
-            .uci_move_checked("e1e7")
-            .uci_move_checked("h7g6")
-            .uci_move_checked("a1e1")
-            .uci_move_checked("g6f6")
-            .uci_move_checked("e1e6");
+        pos.uci_move_checked("d2d4");
+        pos.uci_move_checked("d7d5");
+        pos.uci_move_checked("g1f3");
+        pos.uci_move_checked("b8c6");
+        pos.uci_move_checked("b1c3");
+        pos.uci_move_checked("g8f6");
+        pos.uci_move_checked("e2e3");
+        pos.uci_move_checked("e7e6");
+        pos.uci_move_checked("a2a3");
+        pos.uci_move_checked("g7g6");
+        pos.uci_move_checked("f1b5");
+        pos.uci_move_checked("a7a6");
+        pos.uci_move_checked("b5c6");
+        pos.uci_move_checked("b7c6");
+        pos.uci_move_checked("f3e5");
+        pos.uci_move_checked("d8d6");
+        pos.uci_move_checked("f2f3");
+        pos.uci_move_checked("c6c5");
+        pos.uci_move_checked("e1g1");
+        pos.uci_move_checked("c5c4");
+        pos.uci_move_checked("e3e4");
+        pos.uci_move_checked("c7c6");
+        pos.uci_move_checked("c1f4");
+        pos.uci_move_checked("a6a5");
+        pos.uci_move_checked("c3a4");
+        pos.uci_move_checked("f6h5");
+        pos.uci_move_checked("d1d2");
+        pos.uci_move_checked("f7f5");
+        pos.uci_move_checked("e4f5");
+        pos.uci_move_checked("e6f5");
+        pos.uci_move_checked("f1e1");
+        pos.uci_move_checked("c8d7");
+        pos.uci_move_checked("e5c6");
+        pos.uci_move_checked("e8f7");
+        pos.uci_move_checked("f4d6");
+        pos.uci_move_checked("f8d6");
+        pos.uci_move_checked("c6e5");
+        pos.uci_move_checked("f7g7");
+        pos.uci_move_checked("e5d7");
+        pos.uci_move_checked("h7h6");
+        pos.uci_move_checked("a4b6");
+        pos.uci_move_checked("a8a7");
+        pos.uci_move_checked("d7c5");
+        pos.uci_move_checked("d6f4");
+        pos.uci_move_checked("c5e6");
+        pos.uci_move_checked("g7f6");
+        pos.uci_move_checked("e6f4");
+        pos.uci_move_checked("h5f4");
+        pos.uci_move_checked("d2f4");
+        pos.uci_move_checked("g6g5");
+        pos.uci_move_checked("f4e5");
+        pos.uci_move_checked("f6f7");
+        pos.uci_move_checked("e5h8");
+        pos.uci_move_checked("f7g6");
+        pos.uci_move_checked("g2g4");
+        pos.uci_move_checked("a7h7");
+        pos.uci_move_checked("h8h7");
+        pos.uci_move_checked("g6h7");
+        pos.uci_move_checked("e1e7");
+        pos.uci_move_checked("h7g6");
+        pos.uci_move_checked("a1e1");
+        pos.uci_move_checked("g6f6");
+        pos.uci_move_checked("e1e6");
     }
 
     #[test]
     fn zobrist_test() {
-        let mut board = ChessBoard::new();
+        let mut board = Position::new();
 
         let moves = vec![
             Move::quiet(Role::Pawn, Square::D2, Square::D4),
@@ -853,18 +818,18 @@ mod tests {
 
     #[test]
     fn undo_basic_move_restores_position() {
-        let mut board = ChessBoard::new();
+        let mut board = Position::new();
 
         let initial_hash = board.zobrist_hash();
         let initial_fen = board.into_fen();
 
         let mv = Move::quiet(Role::Pawn, Square::E2, Square::E4);
 
-        board = board.do_move(mv).unwrap();
+        let undo = board.do_move(mv).unwrap();
 
         assert_ne!(board.zobrist_hash(), initial_hash);
 
-        board.undo_move();
+        board.undo_move(undo);
 
         assert_eq!(board.zobrist_hash(), initial_hash);
         assert_eq!(board.into_fen(), initial_fen);
@@ -872,12 +837,13 @@ mod tests {
 
     #[test]
     fn undo_capture_restores_piece() {
-        let mut board = ChessBoard::new();
+        let mut board = Position::new();
 
-        board = board
+        let _undo = board
             .do_move(Move::quiet(Role::Pawn, Square::E2, Square::E4))
             .unwrap();
-        board = board
+
+        let _undo = board
             .do_move(Move::quiet(Role::Pawn, Square::D7, Square::D5))
             .unwrap();
 
@@ -886,8 +852,8 @@ mod tests {
         let before = board.clone();
         let hash_before = board.zobrist_hash();
 
-        board = board.do_move(mv).unwrap();
-        board.undo_move();
+        let undo = board.do_move(mv).unwrap();
+        board.undo_move(undo);
 
         assert_eq!(board, before);
         assert_eq!(board.zobrist_hash(), hash_before);
@@ -895,21 +861,20 @@ mod tests {
 
     #[test]
     fn undo_promotion_restores_pawn() {
-        let mut board = ChessBoard::new();
+        let mut board = Position::new();
 
-        board = board
-            .uci_move_checked("b2b4")
-            .uci_move_checked("a7a6")
-            .uci_move_checked("b4b5")
-            .uci_move_checked("h7h6")
-            .uci_move_checked("b5a6")
-            .uci_move_checked("h6h5")
-            .uci_move_checked("a6b7")
-            .uci_move_checked("h5h4");
+        board.uci_move_checked("b2b4");
+        board.uci_move_checked("a7a6");
+        board.uci_move_checked("b4b5");
+        board.uci_move_checked("h7h6");
+        board.uci_move_checked("b5a6");
+        board.uci_move_checked("h6h5");
+        board.uci_move_checked("a6b7");
+        board.uci_move_checked("h5h4");
 
         let before = board.clone();
 
-        board = board
+        let undo = board
             .do_move(Move::capture_promotion(
                 Square::B7,
                 Square::A8,
@@ -918,59 +883,57 @@ mod tests {
             ))
             .unwrap();
 
-        board.undo_move();
+        board.undo_move(undo);
 
         assert_eq!(board, before);
     }
 
     #[test]
     fn undo_castling_restores_king_and_rook() {
-        let mut board = ChessBoard::new();
+        let mut board = Position::new();
 
-        board = board
-            .uci_move_checked("e2e3")
-            .uci_move_checked("e7e6")
-            .uci_move_checked("f1d3")
-            .uci_move_checked("a7a6")
-            .uci_move_checked("g1f3")
-            .uci_move_checked("b7b6");
+        board.uci_move_checked("e2e3");
+        board.uci_move_checked("e7e6");
+        board.uci_move_checked("f1d3");
+        board.uci_move_checked("a7a6");
+        board.uci_move_checked("g1f3");
+        board.uci_move_checked("b7b6");
 
         let before = board.clone();
 
-        board = board.do_move(Move::castling(CastlingSide::WShort)).unwrap();
+        let undo = board.do_move(Move::castling(CastlingSide::WShort)).unwrap();
 
-        board.undo_move();
+        board.undo_move(undo);
 
         assert_eq!(board, before);
     }
 
     #[test]
     fn undo_en_passant_restores_captured_pawn() {
-        let mut board = ChessBoard::new();
+        let mut board = Position::new();
 
-        board = board
-            .uci_move_checked("e2e4")
-            .uci_move_checked("a7a6")
-            .uci_move_checked("e4e5")
-            .uci_move_checked("d7d5");
+        board.uci_move_checked("e2e4");
+        board.uci_move_checked("a7a6");
+        board.uci_move_checked("e4e5");
+        board.uci_move_checked("d7d5");
 
         let before = board.clone();
 
-        board = board
+        let undo = board
             .do_move(Move::EnPassant {
                 from: Square::E5,
                 to: Square::D6,
             })
             .unwrap();
 
-        board.undo_move();
+        board.undo_move(undo);
 
         assert_eq!(board, before);
     }
 
     #[test]
     fn undo_multiple_moves_restores_starting_position() {
-        let mut board = ChessBoard::new();
+        let mut board = Position::new();
 
         let before = board.clone();
         let initial_hash = board.zobrist_hash();
@@ -981,12 +944,15 @@ mod tests {
             Move::quiet(Role::Knight, Square::G1, Square::F3),
         ];
 
+        let mut undo_stack = vec![];
+
         for mv in moves {
-            board = board.do_move(mv).unwrap();
+            let undo = board.do_move(mv).unwrap();
+            undo_stack.push(undo);
         }
 
         for _ in 0..3 {
-            board.undo_move();
+            board.undo_move(undo_stack.pop().unwrap());
         }
 
         assert_eq!(board.zobrist_hash(), initial_hash);
@@ -995,35 +961,35 @@ mod tests {
 
     #[test]
     fn undo_restores_turn_correctly() {
-        let mut board = ChessBoard::new();
+        let mut board = Position::new();
 
         let before = board.clone();
         let start_turn = board.turn();
 
-        board = board
+        let undo = board
             .do_move(Move::quiet(Role::Pawn, Square::E2, Square::E4))
             .unwrap();
 
         assert_ne!(board.turn(), start_turn);
 
-        board.undo_move();
+        board.undo_move(undo);
         assert_eq!(board.turn(), start_turn);
         assert_eq!(board, before);
     }
 
     #[test]
     fn random_move_undo_roundtrip() {
-        let mut board = ChessBoard::new();
+        let mut board = Position::new();
         let before = board.clone();
 
         for _ in 0..100_000 {
             let moves = board.legal_moves();
             let mv = moves.choose(&mut rand::rng()).unwrap();
-            
+
             let prev_hash = board.zobrist_hash();
 
-            board = board.do_move(*mv).unwrap();
-            board.undo_move();
+            let undo = board.do_move(*mv).unwrap();
+            board.undo_move(undo);
 
             assert_eq!(board.zobrist_hash(), prev_hash);
         }

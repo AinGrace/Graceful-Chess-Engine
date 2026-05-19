@@ -2,7 +2,7 @@ use types::{
     castlings::Castlings, chess_move::Move, color::Color, piece::Piece, role::Role, square::Square,
 };
 
-use crate::chessboard::ChessBoard;
+use crate::position::Position;
 
 static ZOBRIST: ZobristTable = init_zobrist_table();
 
@@ -57,7 +57,7 @@ const fn xorshift64(state: &mut u64) -> u64 {
     *state
 }
 
-pub fn compute_hash(pos: &ChessBoard) -> u64 {
+pub fn compute_hash(pos: &Position) -> u64 {
     let mut hash = 0;
 
     pos.board().occupied().for_each(|sqr| {

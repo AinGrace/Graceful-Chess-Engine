@@ -1,5 +1,5 @@
 use crate::{
-    color::{self, Color},
+    color::Color,
     piece::Piece,
 };
 
