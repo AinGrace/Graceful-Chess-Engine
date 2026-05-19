@@ -58,9 +58,9 @@ impl ByColor<Bitboard> {
 
     pub fn peek_color_checked(&self, square: Square) -> Color {
         if self.whites().is_square_set(square) {
-            return Color::White;
+            Color::White
         } else if self.blacks().is_square_set(square) {
-            return Color::Black;
+            Color::Black
         } else {
             panic!("peek_color_checked on unset square")
         }
@@ -69,7 +69,7 @@ impl ByColor<Bitboard> {
 
 #[cfg(test)]
 mod by_color_tests {
-    
+
     use crate::{
         bitboard::{Bitboard, ToBitboard},
         color::Color,

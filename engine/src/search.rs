@@ -38,7 +38,7 @@ pub fn negamax(pos: &mut Position, depth: u8, ply: u8) -> (i32, Option<Move>) {
             best_move = Some(mv);
         }
     }
-    return (best_score, best_move);
+    (best_score, best_move)
 }
 
 #[cfg(test)]

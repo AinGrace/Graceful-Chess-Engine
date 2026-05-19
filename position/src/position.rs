@@ -225,7 +225,7 @@ impl Position {
     }
 
     pub fn uci_move_checked(&mut self, raw_uci: &str) -> Undo {
-        let uci_move = self.parse_uci(raw_uci).expect(&format!(
+        let uci_move = self.parse_uci(raw_uci).unwrap_or_else(|| panic!(
             "caller quarantees the validity of raw_uci {raw_uci}"
         ));
 
@@ -315,7 +315,7 @@ impl Position {
         legal_moves.contains(&mv)
     }
 
-    /// TODO: move to ChessBoard
+    // TODO: move to ChessBoard
     // pub fn game_result(&self) -> GameResult {
     //     if self.board().is_insufficient_material() {
     //         return GameResult::Draw;

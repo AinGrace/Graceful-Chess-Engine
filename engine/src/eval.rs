@@ -117,9 +117,9 @@ pub fn static_eval(pos: &Position) -> i32 {
     let score = mobility + material + pst;
 
     if pos.turn() == Color::White {
-        score as i32
+        score
     } else {
-        -(score as i32)
+        -score
     }
 }
 

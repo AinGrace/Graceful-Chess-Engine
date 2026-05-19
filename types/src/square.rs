@@ -87,7 +87,7 @@ impl Square {
 
     #[inline(always)]
     pub const fn is_dark_square(self) -> bool {
-        self.as_u32() % 2 == 0
+        self.as_u32().is_multiple_of(2)
     }
 
     #[inline(always)]

@@ -38,7 +38,7 @@ fn main() {
             }
 
             "eval" => {
-                println!("{}", eval::static_eval(&pos))
+                println!("{}", eval::static_eval(&pos));
             }
 
             _ => {
@@ -71,14 +71,17 @@ fn handle_go(pos: &mut Position, line: &str) {
     };
 
     let (_score, best_move) = search::negamax(pos, depth, 0);
-    println!("bestmove {} | score -> {_score}", best_move.unwrap().to_uci());
+    println!(
+        "bestmove {} | score -> {_score}",
+        best_move.unwrap().to_uci()
+    );
 }
 
 fn handle_position(pos: &mut Position, line: &str) {
     let mut commands = line.split_whitespace();
 
     // drop first word
-    let _ = commands.nth(0);
+    let _ = commands.next();
 
     let Some(second_part) = commands.next() else {
         return;
@@ -87,7 +90,7 @@ fn handle_position(pos: &mut Position, line: &str) {
     match second_part {
         "startpos" => {
             handle_moves(pos, commands);
-        },
+        }
         "fen" => {
             let Some(fen_str) = commands.next() else {
                 return;
@@ -104,7 +107,7 @@ fn handle_position(pos: &mut Position, line: &str) {
             handle_moves(pos, commands);
         }
 
-        _unknown => return,
+        _unknown => (),
     }
 }
 
@@ -112,12 +115,10 @@ fn handle_moves(pos: &mut Position, mut commands: std::str::SplitWhitespace<'_>)
     if let Some(moves_cmd) = commands.next()
         && moves_cmd == "moves"
     {
-        let uci_moves: Vec<&str> = commands.collect();
-
-        uci_moves.into_iter().for_each(|raw_uci| {
+        for raw_uci in commands.into_iter() {
             let Ok(_undo) = pos.uci_move(raw_uci) else {
                 return;
             };
-        });
+        }
     }
 }
