@@ -7,7 +7,7 @@ pub enum CastlingSide {
     BLong,
 }
 
-
+/// TODO: use bits to reduce the memory usage, as in the Castlings struct
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Move {
     Standard {

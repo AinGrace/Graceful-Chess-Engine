@@ -1,9 +1,5 @@
 use position::position::Position;
-use types::{
-    color::{self, Color},
-    piece::{self, Piece},
-    square::{self, Square},
-};
+use types::{color::Color, square::Square};
 
 use crate::eval::constants::{
     BISHOP_PST, BISHOP_VALUE, KING_MIDDLE_GAME_PST, KNIGHT_PST, KNIGHT_VALUE, PAWN_PST, PAWN_VALUE,
@@ -11,26 +7,12 @@ use crate::eval::constants::{
 };
 
 #[rustfmt::skip]
-mod constants {
-    
-    pub const W_MATE_0: i32 = 100_000; 
-    pub const B_MATE_0: i32 = -100_000; 
+pub(crate) mod constants {
 
-    pub const W_MATE_1: i32 = 10_000; 
-    pub const B_MATE_1: i32 = -10_000; 
-    
-    pub const W_MATE_2: i32 = 9999; 
-    pub const B_MATE_2: i32 = -9999; 
-    
-    pub const W_MATE_3: i32 = 9998; 
-    pub const B_MATE_3: i32 = -9998; 
-    
-    pub const W_MATE_4: i32 = 9997; 
-    pub const B_MATE_4: i32 = -9997; 
-    
-    pub const W_MATE_5: i32 = 9996; 
-    pub const B_MATE_5: i32 = -9996; 
-    
+    pub const MATE_SCORE: i32 = 100_000;
+    pub const DRAW_SCORE: i32 = 0;
+    pub const NEG_INF: i32 = -1_000_000;
+
     /// assign 100 as default pawn value instead of 1 in order to avoid floating point calculations
     pub const PAWN_VALUE    :   u32 = 100;
     pub const KNIGHT_VALUE  :   u32 = 340;
@@ -127,15 +109,10 @@ mod constants {
     ];
 }
 
-pub fn full_eval(pos: &Position) -> i32 {
+pub fn static_eval(pos: &Position) -> i32 {
     let mobility = mobility(pos);
     let material = material_score(pos);
     let pst = calculate_pst_score(pos);
-
-    #[cfg(test)]
-    {
-        // println!("Mobility -> {mobility} | Material -> {material} | PST -> {pst}");
-    }
 
     let score = mobility + material + pst;
 
@@ -245,10 +222,7 @@ fn calculate_piece_pst(table: &[i32; 64], square: Square, side: Color) -> i32 {
 
 #[cfg(test)]
 mod tests {
-    use types::{
-        chess_move::{CastlingSide, Move},
-        role::Role,
-    };
+    use types::{chess_move::Move, role::Role};
 
     use super::*;
 
@@ -325,7 +299,7 @@ mod tests {
             println!("Making move -> {mv:?}");
             let _undo = pos.do_move(mv).unwrap();
             dbg!(&pos);
-            dbg!(full_eval(&pos));
+            dbg!(static_eval(&pos));
             println!();
             println!();
             println!();

@@ -383,6 +383,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "uci"
+version = "0.1.0"
+dependencies = [
+ "engine",
+ "position",
+ "types",
+]
+
+[[package]]
 name = "unicode-ident"
 version = "1.0.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
