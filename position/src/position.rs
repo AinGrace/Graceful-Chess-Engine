@@ -75,7 +75,7 @@ impl Display for PositionError {
     }
 }
 
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Undo {
     m: Move,
     castlings: Castlings,
