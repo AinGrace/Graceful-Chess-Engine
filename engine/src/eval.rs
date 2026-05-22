@@ -123,11 +123,11 @@ pub fn static_eval(pos: &Position) -> i32 {
     }
 }
 
-pub fn incremental_eval(pos: &Position, score: i32) -> i32 {
+pub fn incremental_eval(_pos: &Position, _score: i32) -> i32 {
     todo!()
 }
 
-fn mobility(pos: &Position) -> i32 {
+fn mobility(_pos: &Position) -> i32 {
     // TODO: good mobility algorithm requires ChessBoard::legal_moves()
     // to be able to generate moves for both sides
     // not only for side to move

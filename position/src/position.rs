@@ -1,5 +1,4 @@
 use std::{
-    collections::HashMap,
     error::Error,
     fmt::{Debug, Display},
     mem,
@@ -21,6 +20,7 @@ pub enum GameResult {
 }
 
 impl GameResult {
+    
     fn new_winner(side: Color) -> Self {
         match side {
             Color::White => Self::White,
