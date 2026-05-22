@@ -1,4 +1,7 @@
-use std::collections::VecDeque;
+use std::{
+    collections::VecDeque,
+    time::{Duration, Instant},
+};
 
 use engine::{eval, search};
 use position::position::{Position, Undo};
@@ -18,6 +21,9 @@ pub struct Model {
     logs: VecDeque<String>,
     log_state: ListState,
 
+    search_time: Duration,
+    search_depth: u8,
+
     exit: bool,
 }
 
@@ -28,12 +34,18 @@ impl Model {
         let legal_moves = pos.legal_moves();
         let partial_move = Vec::with_capacity(5);
         let move_history = Vec::with_capacity(128);
-        let best_move = search::negamax(&mut pos, 4, 0).1;
         let eval = i32::default();
         let undo = Vec::with_capacity(128);
 
         let logs = VecDeque::new();
         let log_state = ListState::default();
+
+        let time_begin = Instant::now();
+        let best_move = search::negamax(&mut pos, 4, 0).1;
+        let time_end = Instant::now();
+
+        let search_time = time_end.duration_since(time_begin);
+        let search_depth = 4;
 
         let exit = false;
 
@@ -47,6 +59,8 @@ impl Model {
             undo,
             logs,
             log_state,
+            search_time,
+            search_depth,
             exit,
         }
     }
@@ -117,6 +131,7 @@ impl Model {
 
         let undo = self.pos.do_move_inner(*mv);
 
+        self.move_history.push(*mv);
         self.legal_moves = self.pos.legal_moves();
         self.undo.push(undo);
         self.partial_move.clear();
@@ -154,11 +169,35 @@ impl Model {
         }
     }
 
-    fn update_best_move(&mut self) {
-        let None = self.best_move else {
-            return;
-        };
+    pub fn update_best_move(&mut self) {
+        let time_begin = Instant::now();
+        self.best_move = search::negamax(&mut self.pos, self.search_depth, 0).1;
+        let time_end = Instant::now();
 
-        self.best_move = search::negamax(&mut self.pos, 4, 0).1;
+        self.search_time = time_end.duration_since(time_begin)
+    }
+
+    pub fn search_time(&self) -> Duration {
+        self.search_time
+    }
+
+    pub fn search_depth(&self) -> u8 {
+        self.search_depth
+    }
+
+    pub fn set_search_depth(&mut self, depth: u8) {
+        self.search_depth = depth;
+    }
+
+    pub fn half_moves(&self) -> u32 {
+        self.pos.half_moves()
+    }
+
+    pub fn full_moves(&self) -> u32 {
+        self.pos.full_moves()
+    }
+
+    pub fn z_hash(&self) -> u64 {
+        self.pos.zobrist_hash()
     }
 }

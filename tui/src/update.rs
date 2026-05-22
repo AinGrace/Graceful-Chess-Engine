@@ -3,7 +3,6 @@ use ratatui::crossterm::{
     self,
     event::{Event, KeyCode},
 };
-use types::square::Square;
 
 use crate::model::Model;
 
@@ -13,9 +12,9 @@ pub enum Message {
     RemoveChar,
     ConfirmMove,
     UndoMove,
-    Highlight(Square),
-    Eval,
-    Search(u8),
+    SearchIncrement,
+    SearchDecrement,
+    Search,
     Quit,
     AcceptBestMove,
 }
@@ -50,12 +49,10 @@ pub fn update(model: &mut Model, msg: Message) {
                 model.info_log(format!("applied engine suggested move [{best_move}]"));
             }
         }
-        Message::Highlight(_square) => todo!(),
-        Message::Eval => {
-            todo!()
-        }
-        Message::Search(_) => todo!(),
         Message::Quit => model.quit(),
+        Message::SearchIncrement => model.set_search_depth(model.search_depth().saturating_add(1)),
+        Message::SearchDecrement => model.set_search_depth(model.search_depth().saturating_sub(1)),
+        Message::Search => model.update_best_move(),
     }
 }
 
@@ -80,6 +77,9 @@ fn handle_char(chr: char) -> color_eyre::Result<Option<Message>> {
     match chr {
         'u' => Ok(Some(Message::UndoMove)),
         'a'..='h' | '1'..='8' => Ok(Some(Message::PartialMove(chr))),
+        '+' => Ok(Some(Message::SearchIncrement)),
+        '-' => Ok(Some(Message::SearchDecrement)),
+        's' => Ok(Some(Message::Search)),
         _rest => Ok(None),
     }
 }

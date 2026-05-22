@@ -3,7 +3,7 @@ use ratatui::{
     layout::{Constraint, Layout},
     style::{Color, Style},
     text::{Line, Span},
-    widgets::{Block, BorderType, List, ListItem, Paragraph},
+    widgets::{Block, BorderType, List, ListItem, Paragraph, Wrap},
 };
 use types::{file::File, piece::Piece, rank::Rank, square::Square};
 
@@ -35,14 +35,21 @@ pub fn global_render(frame: &mut Frame, model: &Model) {
 }
 
 fn build_history(model: &Model) -> Paragraph<'_> {
-    let line = Line::from_iter(model.move_history_iter());
+    let line = Line::from_iter(
+        model
+            .move_history_iter()
+            .enumerate()
+            .map(|(i, mv)| format!("{i}. {mv} ")),
+    );
 
-    Paragraph::new(line).block(
-        Block::bordered()
-            .title("Move history")
-            .border_type(BorderType::Rounded)
-            .border_style(Style::new().light_cyan()),
-    )
+    Paragraph::new(line)
+        .block(
+            Block::bordered()
+                .title("Move history")
+                .border_type(BorderType::Rounded)
+                .border_style(Style::new().light_cyan()),
+        )
+        .wrap(Wrap { trim: true })
 }
 
 fn build_input_box(model: &Model) -> Paragraph<'static> {
@@ -58,9 +65,28 @@ fn build_info(model: &Model) -> Paragraph<'_> {
     let turn_line = Line::from(format!("Turn: {}", model.turn().char()));
     let ep_line = Line::from(format!("Ep square: {}", model.ep_square_to_str()));
     let best_move_line = Line::from(format!("Best move: {}", model.best_move_to_uci()));
+    let half_moves_line = Line::from(format!("Half moves: {}", model.half_moves()));
+    let full_moves_line = Line::from(format!("Full moves: {}", model.full_moves()));
+    let z_hash_line = Line::from(format!("Zobrist hash: {}", model.z_hash()));
+    let search_depth = Line::from(format!("Search depth: {}", model.search_depth()));
+    let search_time_line = Line::from(format!(
+        "Search time: millis -> {} | nanos -> {}",
+        model.search_time().as_millis(),
+        model.search_time().as_nanos()
+    ));
 
-    Paragraph::new(vec![eval_line, turn_line, ep_line, best_move_line])
-        .block(Block::bordered().title("Info"))
+    Paragraph::new(vec![
+        eval_line,
+        turn_line,
+        ep_line,
+        best_move_line,
+        search_depth,
+        search_time_line,
+        half_moves_line,
+        full_moves_line,
+        z_hash_line,
+    ])
+    .block(Block::bordered().title("Info"))
 }
 
 fn build_chessboard(model: &Model) -> Paragraph<'_> {
