@@ -122,73 +122,70 @@ fn build_info(model: &Model) -> Paragraph<'_> {
 }
 
 fn build_chessboard(model: &mut Model) -> Paragraph<'_> {
-    let mut lines = vec![];
+    const LIGHT: Color = Color::Rgb(240, 217, 181);
+    const DARK: Color = Color::Rgb(181, 136, 99);
 
-    let partial_move_from = Square::from_str(&model.left_partial_move().unwrap_or_default());
-    let partial_move_to = Square::from_str(&model.right_partial_move().unwrap_or_default());
+    let partial_move_from = Square::from_str(&model.left_partial_move().unwrap_or_default()).ok();
+    let partial_move_to = Square::from_str(&model.right_partial_move().unwrap_or_default()).ok();
 
-    for rank in (0..8).rev() {
-        let mut spans = Vec::new();
+    let mut lines: Vec<Line> = (0..8)
+        .rev()
+        .map(|rank| {
+            let mut spans = vec![Span::raw(format!("{} ", rank + 1))];
 
-        // rank label
-        spans.push(Span::raw(format!("{} ", rank + 1)));
+            for file in 0..8 {
+                let square = Square::of(File::from_u32_checked(file), Rank::from_u32_checked(rank));
+                let piece = model.peek_piece_at(square);
+                let symbol = piece.map(piece_to_unicode).unwrap_or(" ");
 
-        for file in 0..8 {
-            let square = Square::of(File::from_u32_checked(file), Rank::from_u32_checked(rank));
-
-            let piece = model.peek_piece_at(square);
-
-            let symbol = piece.map(piece_to_unicode).unwrap_or(" ");
-
-            // board colors
-            let light = Color::Rgb(240, 217, 181);
-            let dark = Color::Rgb(181, 136, 99);
-
-            let piece_span = Span::raw(format!("  {symbol}  "));
-            let mut square_style =
-                Style::new().bg(if square.is_dark_square() { dark } else { light });
-
-            if let Ok(move_from) = partial_move_from {
-                // highlight leval squares for a piece at `move_from`
-                if model.is_legal_orig_dest_for(move_from, square) {
-                    square_style = square_style.bg(Color::Yellow);
-                }
-
-                if move_from == square {
-                    if model.is_legal_origin(move_from) {
-                        square_style = square_style.bg(Color::LightGreen);
-                    } else {
-                        square_style = square_style.bg(Color::LightRed);
+                let bg = match () {
+                    _ if partial_move_to == Some(square) => {
+                        if model.is_legal_dest(square) {
+                            Color::Green
+                        } else {
+                            Color::LightRed
+                        }
                     }
-                }
-            }
+                    _ if partial_move_from == Some(square) => {
+                        if model.is_legal_origin(square) {
+                            Color::LightGreen
+                        } else {
+                            Color::LightRed
+                        }
+                    }
+                    _ if partial_move_from
+                        .is_some_and(|from| model.is_legal_orig_dest_for(from, square)) =>
+                    {
+                        Color::Yellow
+                    }
+                    _ => {
+                        if square.is_dark_square() {
+                            DARK
+                        } else {
+                            LIGHT
+                        }
+                    }
+                };
 
-            if let Ok(move_to) = partial_move_to
-                && move_to == square
-            {
-                if model.is_legal_dest(move_to) {
-                    square_style = square_style.bg(Color::Green);
-                } else {
-                    square_style = square_style.bg(Color::LightRed);
-                }
-            }
-
-            if let Some(piece) = piece {
-                let piece_color = match piece.color() {
+                let fg = piece.map(|p| match p.color() {
                     types::color::Color::White => Color::Rgb(255, 255, 255),
                     types::color::Color::Black => Color::Rgb(0, 0, 0),
+                });
+
+                let style = match fg {
+                    Some(fg) => Style::new().bg(bg).fg(fg),
+                    None => Style::new().bg(bg),
                 };
-                spans.push(piece_span.style(square_style.fg(piece_color)));
-            } else {
-                spans.push(piece_span.style(square_style));
+
+                spans.push(Span::styled(format!("  {symbol}  "), style));
             }
-        }
 
-        lines.push(Line::from(spans));
-    }
+            Line::from(spans)
+        })
+        .collect();
 
-    // file labels
     lines.push(Line::raw("    A    B    C    D    E    F    G    H"));
+
     Paragraph::new(lines).block(
         Block::bordered()
             .title("Graceful chess")
