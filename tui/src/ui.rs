@@ -1,4 +1,4 @@
-use std::str::FromStr;
+use std::{fmt::Display, str::FromStr};
 
 use ratatui::{
     Frame,
@@ -7,7 +7,7 @@ use ratatui::{
     text::{Line, Span},
     widgets::{Block, BorderType, List, Paragraph, Wrap},
 };
-use types::{file::File, piece::Piece, rank::Rank, square::Square};
+use types::{chess_move::Move, file::File, piece::Piece, rank::Rank, square::Square};
 
 use crate::model::Model;
 
@@ -84,32 +84,41 @@ fn build_input_box(model: &Model) -> Paragraph<'static> {
 }
 
 fn build_info(model: &Model) -> Paragraph<'_> {
-    let eval_line = Line::from(format!("Eval: {}", model.static_eval()));
-    let turn_line = Line::from(format!("Turn: {}", model.turn().char()));
-    let ep_line = Line::from(format!("Ep square: {}", model.ep_square_to_str()));
-    let best_move_line = Line::from(format!("Best move: {}", model.best_move_to_uci()));
-    let half_moves_line = Line::from(format!("Half moves: {}", model.half_moves()));
-    let full_moves_line = Line::from(format!("Full moves: {}", model.full_moves()));
-    let z_hash_line = Line::from(format!("Zobrist hash: {}", model.z_hash()));
-    let search_depth = Line::from(format!("Search depth: {}", model.search_depth()));
-    let search_time_line = Line::from(format!(
-        "Search time: millis -> {} | micros -> {}",
-        model.search_time().as_millis(),
-        model.search_time().as_micros()
-    ));
+    let line = |label: &str, val: &dyn Display| Line::from(format!("{label}: {val}"));
+
+    let legal_moves = model
+        .left_partial_move()
+        .and_then(|raw| Square::from_str(&raw).ok())
+        .and_then(|sq| model.legal_moves_of(sq))
+        .map(|moves| {
+            moves
+                .iter()
+                .map(|mv| mv.to_string())
+                .collect::<Vec<_>>()
+                .join(", ")
+        })
+        .unwrap_or_else(|| "None".to_string());
+
+    let search_time = model.search_time();
 
     Paragraph::new(vec![
-        eval_line,
-        turn_line,
-        ep_line,
-        best_move_line,
-        search_depth,
-        search_time_line,
-        half_moves_line,
-        full_moves_line,
-        z_hash_line,
+        line("Eval", &model.static_eval()),
+        line("Turn", &model.turn().char()),
+        line("Ep square", &model.ep_square_to_str()),
+        line("Best move", &model.best_move_to_uci()),
+        line("Search depth", &model.search_depth()),
+        Line::from(format!(
+            "Search time: millis → {} | micros → {}",
+            search_time.as_millis(),
+            search_time.as_micros(),
+        )),
+        line("Half moves", &model.half_moves()),
+        line("Full moves", &model.full_moves()),
+        line("Zobrist hash", &model.z_hash()),
+        Line::from(format!("Legal moves for selection: {legal_moves}")),
     ])
     .block(Block::bordered().title("Info"))
+    .wrap(Wrap { trim: true })
 }
 
 fn build_chessboard(model: &mut Model) -> Paragraph<'_> {

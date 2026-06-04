@@ -181,6 +181,16 @@ impl Model {
             .any(|mv| mv.from() == from && mv.to() == to)
     }
 
+    pub fn legal_moves_of(&self, from: Square) -> Option<Vec<String>> {
+        self.legal_moves
+            .iter()
+            .cloned()
+            .filter(|mv| mv.from() == from)
+            .map(|mv| mv.to_uci())
+            .map(Some)
+            .collect()
+    }
+
     pub fn left_partial_move(&self) -> Option<String> {
         if self.partial_move.len() < 2 {
             None
