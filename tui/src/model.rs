@@ -167,11 +167,25 @@ impl Model {
         self.logs.as_slices().0
     }
 
+    pub fn is_legal_origin(&self, from: Square) -> bool {
+        self.legal_moves.iter().any(|mv| mv.from() == from)
+    }
+
+    pub fn is_legal_dest(&self, to: Square) -> bool {
+        self.legal_moves.iter().any(|mv| mv.to() == to)
+    }
+
+    pub fn is_legal_orig_dest_for(&self, from: Square, to: Square) -> bool {
+        self.legal_moves
+            .iter()
+            .any(|mv| mv.from() == from && mv.to() == to)
+    }
+
     pub fn left_partial_move(&self) -> Option<String> {
         if self.partial_move.len() < 2 {
             None
         } else {
-            Some(self.collect_partial_move_to_str())
+            Some(self.partial_move_to_string()[..2].into())
         }
     }
 
@@ -179,7 +193,7 @@ impl Model {
         if self.partial_move.len() < 4 {
             None
         } else {
-            Some(self.collect_partial_move_to_str()[1..3].to_string())
+            Some(self.partial_move_to_string()[2..=3].into())
         }
     }
 
@@ -189,7 +203,7 @@ impl Model {
             .unwrap_or("None".into())
     }
 
-    pub fn collect_partial_move_to_str(&self) -> String {
+    pub fn partial_move_to_string(&self) -> String {
         self.partial_move.iter().collect()
     }
 

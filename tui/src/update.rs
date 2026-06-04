@@ -36,7 +36,7 @@ pub fn update(model: &mut Model, msg: Message) {
         }
 
         Message::ConfirmMove => {
-            if let Some(applied_move) = model.make_move(&model.collect_partial_move_to_str()) {
+            if let Some(applied_move) = model.make_move(&model.partial_move_to_string()) {
                 model.info_log(format!("applied move [{applied_move}]"));
             }
         }

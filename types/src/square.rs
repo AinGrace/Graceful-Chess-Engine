@@ -1,4 +1,8 @@
-use std::{fmt::Display, mem::transmute, str::FromStr};
+use std::{
+    fmt::{Display, Formatter},
+    mem::transmute,
+    str::FromStr,
+};
 
 use crate::{file::File, rank::Rank};
 
@@ -102,25 +106,30 @@ impl Display for Square {
     }
 }
 
-pub struct ParseSquareError;
+#[derive(Debug)]
+pub struct ParseSquareError(String);
+
+impl Display for ParseSquareError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
+        write!(f, "invalid square: {:?}", self.0)
+    }
+}
 
 impl FromStr for Square {
     type Err = ParseSquareError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let err = || ParseSquareError(s.into());
+
         if s.len() != 2 {
-            return Err(ParseSquareError);
+            return Err(err());
         }
 
-        if !s.is_ascii() {
-            return Err(ParseSquareError);
-        }
+        let mut chars = s.chars();
 
-        let file =
-            File::from_char(s.chars().next().ok_or(ParseSquareError)?).ok_or(ParseSquareError)?;
+        let file = chars.next().and_then(File::from_char).ok_or_else(err)?;
 
-        let rank =
-            Rank::from_char(s.chars().nth(1).ok_or(ParseSquareError)?).ok_or(ParseSquareError)?;
+        let rank = chars.next().and_then(Rank::from_char).ok_or_else(err)?;
 
         Ok(Self::of(file, rank))
     }

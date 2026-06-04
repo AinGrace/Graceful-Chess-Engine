@@ -76,7 +76,7 @@ fn build_history(model: &Model) -> Paragraph<'_> {
 }
 
 fn build_input_box(model: &Model) -> Paragraph<'static> {
-    let input_line = Line::from(format!("Input: {}", model.collect_partial_move_to_str()));
+    let input_line = Line::from(format!("Input: {}", model.partial_move_to_string()));
 
     Paragraph::new(vec![input_line])
         .block(Block::bordered().border_style(Style::new().yellow()))
@@ -112,7 +112,7 @@ fn build_info(model: &Model) -> Paragraph<'_> {
     .block(Block::bordered().title("Info"))
 }
 
-fn build_chessboard(model: &Model) -> Paragraph<'_> {
+fn build_chessboard(model: &mut Model) -> Paragraph<'_> {
     let mut lines = vec![];
 
     let partial_move_from = Square::from_str(&model.left_partial_move().unwrap_or_default());
@@ -139,17 +139,29 @@ fn build_chessboard(model: &Model) -> Paragraph<'_> {
             let mut square_style =
                 Style::new().bg(if square.is_dark_square() { dark } else { light });
 
-            if let Ok(move_from) = partial_move_from
-                && move_from == square
-            {
-                square_style = square_style.bg(Color::LightGreen);
+            if let Ok(move_from) = partial_move_from {
+                // highlight leval squares for a piece at `move_from`
+                if model.is_legal_orig_dest_for(move_from, square) {
+                    square_style = square_style.bg(Color::Yellow);
+                }
+
+                if move_from == square {
+                    if model.is_legal_origin(move_from) {
+                        square_style = square_style.bg(Color::LightGreen);
+                    } else {
+                        square_style = square_style.bg(Color::LightRed);
+                    }
+                }
             }
 
-            // TODO fix
             if let Ok(move_to) = partial_move_to
                 && move_to == square
             {
-                square_style = square_style.bg(Color::Green);
+                if model.is_legal_dest(move_to) {
+                    square_style = square_style.bg(Color::Green);
+                } else {
+                    square_style = square_style.bg(Color::LightRed);
+                }
             }
 
             if let Some(piece) = piece {
