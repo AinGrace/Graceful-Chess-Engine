@@ -1,5 +1,13 @@
+use std::{
+    io::{self, Write, stdout}, thread,
+};
+
 use color_eyre::eyre::{Ok, Result, bail};
-use ratatui::{DefaultTerminal, macros::ratatui_core::terminal};
+use ratatui::{
+    DefaultTerminal,
+    crossterm::{self, ExecutableCommand, event, execute},
+    macros::ratatui_core::terminal,
+};
 
 use crate::{model::Model, ui::global_render, update::handle_event};
 
@@ -14,6 +22,9 @@ mod update;
 
 fn main() -> color_eyre::Result<()> {
     color_eyre::install()?;
+
+    stdout().execute(event::EnableMouseCapture)?;
+
     ratatui::run(|term| app(term))?;
     Ok(())
 }
@@ -37,7 +48,7 @@ fn app(terminal: &mut DefaultTerminal) -> color_eyre::Result<()> {
 }
 
 fn assert_size(size: ratatui::prelude::Size) -> Result<()> {
-    if size.height < 3 {
+    if size.height < 30 {
         bail!("term height is too small")
     }
 

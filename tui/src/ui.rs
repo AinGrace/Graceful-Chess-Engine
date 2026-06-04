@@ -1,17 +1,23 @@
+use std::str::FromStr;
+
 use ratatui::{
     Frame,
-    layout::{Constraint, Layout},
+    layout::{Constraint, Layout, Position},
     style::{Color, Style},
     text::{Line, Span},
-    widgets::{Block, BorderType, List, ListItem, Paragraph, Wrap},
+    widgets::{Block, BorderType, List, Paragraph, Wrap},
 };
 use types::{file::File, piece::Piece, rank::Rank, square::Square};
 
 use crate::model::Model;
 
-pub fn global_render(frame: &mut Frame, model: &Model) {
-    let left_middle_right =
-        Layout::horizontal(Constraint::from_percentages([35, 30, 35])).split(frame.area());
+// TODO move into model
+pub fn global_render(frame: &mut Frame, model: &mut Model) {
+    let main_area_and_bottom_status_bar =
+        Layout::vertical([Constraint::Fill(1), Constraint::Length(2)]).split(frame.area());
+
+    let left_middle_right = Layout::horizontal(Constraint::from_percentages([35, 30, 35]))
+        .split(main_area_and_bottom_status_bar[0]);
 
     let middle_top_bottom =
         Layout::vertical([Constraint::Fill(1), Constraint::Max(3)]).split(left_middle_right[1]);
@@ -19,19 +25,36 @@ pub fn global_render(frame: &mut Frame, model: &Model) {
     let right_top_bottom =
         Layout::vertical(Constraint::from_percentages([60, 40])).split(left_middle_right[2]);
 
+    // {
+    //     let ui_areas = model.ui_areas_mut();
+    //     ui_areas.set_chessboard_area(middle_top_bottom[0]);
+    //     ui_areas.set_history_area(right_top_bottom[1]);
+    //     ui_areas.
+    // }
+
+    let log_box = build_logs(model.logs().to_vec());
+    if let Some(scroll) = model.take_scrolling()
+        && left_middle_right[0].contains(Position::new(scroll.col(), scroll.row()))
+    {
+        match scroll {
+            crate::model::Scrolling::Up { .. } => model.log_state().select_previous(),
+            crate::model::Scrolling::Down { .. } => model.log_state().select_next(),
+        }
+    }
+
+    frame.render_stateful_widget(log_box, left_middle_right[0], model.log_state());
+
     let board_box = build_chessboard(model);
-    let info_box = build_info(model);
-    let input_box = build_input_box(model);
-    let log_box = build_logs(model);
-    let history_box = build_history(model);
-
     frame.render_widget(board_box, middle_top_bottom[0]);
-    frame.render_widget(input_box, middle_top_bottom[1]);
 
+    let info_box = build_info(model);
     frame.render_widget(info_box, right_top_bottom[0]);
 
+    let input_box = build_input_box(model);
+    frame.render_widget(input_box, middle_top_bottom[1]);
+
+    let history_box = build_history(model);
     frame.render_widget(history_box, right_top_bottom[1]);
-    frame.render_widget(log_box, left_middle_right[0]);
 }
 
 fn build_history(model: &Model) -> Paragraph<'_> {
@@ -70,9 +93,9 @@ fn build_info(model: &Model) -> Paragraph<'_> {
     let z_hash_line = Line::from(format!("Zobrist hash: {}", model.z_hash()));
     let search_depth = Line::from(format!("Search depth: {}", model.search_depth()));
     let search_time_line = Line::from(format!(
-        "Search time: millis -> {} | nanos -> {}",
+        "Search time: millis -> {} | micros -> {}",
         model.search_time().as_millis(),
-        model.search_time().as_nanos()
+        model.search_time().as_micros()
     ));
 
     Paragraph::new(vec![
@@ -92,6 +115,9 @@ fn build_info(model: &Model) -> Paragraph<'_> {
 fn build_chessboard(model: &Model) -> Paragraph<'_> {
     let mut lines = vec![];
 
+    let partial_move_from = Square::from_str(&model.left_partial_move().unwrap_or_default());
+    let partial_move_to = Square::from_str(&model.right_partial_move().unwrap_or_default());
+
     for rank in (0..8).rev() {
         let mut spans = Vec::new();
 
@@ -110,7 +136,21 @@ fn build_chessboard(model: &Model) -> Paragraph<'_> {
             let dark = Color::Rgb(181, 136, 99);
 
             let piece_span = Span::raw(format!("  {symbol}  "));
-            let square_style = Style::new().bg(if square.is_dark_square() { dark } else { light });
+            let mut square_style =
+                Style::new().bg(if square.is_dark_square() { dark } else { light });
+
+            if let Ok(move_from) = partial_move_from
+                && move_from == square
+            {
+                square_style = square_style.bg(Color::LightGreen);
+            }
+
+            // TODO fix
+            if let Ok(move_to) = partial_move_to
+                && move_to == square
+            {
+                square_style = square_style.bg(Color::Green);
+            }
 
             if let Some(piece) = piece {
                 let piece_color = match piece.color() {
@@ -136,22 +176,18 @@ fn build_chessboard(model: &Model) -> Paragraph<'_> {
     )
 }
 
-fn build_logs(model: &Model) -> List<'_> {
-    let items: Vec<ListItem> = model
-        .logs()
-        .iter()
-        .map(|log| ListItem::new(log.as_str()))
-        .collect();
-
-    List::new(items).block(
-        Block::bordered()
-            .title("Logs")
-            .border_type(BorderType::Rounded)
-            .border_style(Style::new().blue()),
-    )
+fn build_logs(logs: Vec<String>) -> List<'static> {
+    List::new(logs)
+        .block(
+            Block::bordered()
+                .title("Logs")
+                .border_type(BorderType::Rounded)
+                .border_style(Style::new().blue()),
+        )
+        .highlight_symbol("=> ")
 }
 
-fn piece_to_unicode(piece: Piece) -> &'static str {
+pub fn piece_to_unicode(piece: Piece) -> &'static str {
     match piece {
         Piece::WPawn | Piece::BPawn => "♟",
         Piece::WKnight | Piece::BKnight => "♞",

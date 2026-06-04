@@ -4,7 +4,7 @@ use ratatui::crossterm::{
     event::{Event, KeyCode},
 };
 
-use crate::model::Model;
+use crate::model::{Model, Scrolling};
 
 #[derive(PartialEq, Debug)]
 pub enum Message {
@@ -14,6 +14,9 @@ pub enum Message {
     UndoMove,
     SearchIncrement,
     SearchDecrement,
+    MouseMove { col: u16, row: u16 },
+    MouseScrollDown { col: u16, row: u16 },
+    MouseScrollUp { col: u16, row: u16 },
     Search,
     Quit,
     AcceptBestMove,
@@ -53,23 +56,70 @@ pub fn update(model: &mut Model, msg: Message) {
         Message::SearchIncrement => model.set_search_depth(model.search_depth().saturating_add(1)),
         Message::SearchDecrement => model.set_search_depth(model.search_depth().saturating_sub(1)),
         Message::Search => model.update_best_move(),
+        Message::MouseScrollDown { col, row } => {
+            model.set_scrolling(Scrolling::Down { col, row });
+        }
+        Message::MouseScrollUp { col, row } => {
+            model.set_scrolling(Scrolling::Up { col, row });
+        }
+        Message::MouseMove { col, row } => {
+        }
     }
 }
 
 pub fn handle_event() -> color_eyre::Result<Option<Message>> {
-    if let Event::Key(key) = crossterm::event::read()?
-        && key.is_press()
-    {
-        match key.code {
-            KeyCode::Esc => return Ok(Some(Message::Quit)),
-            KeyCode::Enter => return Ok(Some(Message::ConfirmMove)),
-            KeyCode::Backspace => return Ok(Some(Message::RemoveChar)),
-            KeyCode::Char(chr) => return handle_char(chr),
-            KeyCode::Tab => return Ok(Some(Message::AcceptBestMove)),
-            _ => Ok(None),
+    match crossterm::event::read()? {
+        Event::FocusGained => Ok(None),
+        Event::FocusLost => Ok(None),
+        Event::Key(key_event) => handle_key(key_event.code),
+        Event::Mouse(mouse_event) => handle_mouse(mouse_event),
+        Event::Paste(_) => Ok(None),
+        Event::Resize(_, _) => Ok(None),
+    }
+}
+
+fn handle_mouse(mouse_event: crossterm::event::MouseEvent) -> color_eyre::Result<Option<Message>> {
+    match mouse_event.kind {
+        crossterm::event::MouseEventKind::Down(_mouse_button) => Ok(None),
+        crossterm::event::MouseEventKind::Up(_mouse_button) => Ok(None),
+        crossterm::event::MouseEventKind::Drag(_mouse_button) => Ok(None),
+        crossterm::event::MouseEventKind::Moved => Ok(Some(Message::MouseMove {
+            col: mouse_event.column,
+            row: mouse_event.row,
+        })),
+        crossterm::event::MouseEventKind::ScrollDown => {
+            while crossterm::event::poll(std::time::Duration::from_millis(0))? {
+                let _ = crossterm::event::read()?; // discard
+            }
+
+            Ok(Some(Message::MouseScrollDown {
+                col: mouse_event.column,
+                row: mouse_event.row,
+            }))
         }
-    } else {
-        Ok(None)
+        crossterm::event::MouseEventKind::ScrollUp => {
+            while crossterm::event::poll(std::time::Duration::from_millis(0))? {
+                let _ = crossterm::event::read()?; // discard
+            }
+
+            Ok(Some(Message::MouseScrollUp {
+                col: mouse_event.column,
+                row: mouse_event.row,
+            }))
+        }
+        crossterm::event::MouseEventKind::ScrollLeft => Ok(None),
+        crossterm::event::MouseEventKind::ScrollRight => Ok(None),
+    }
+}
+
+fn handle_key(key_code: KeyCode) -> color_eyre::Result<Option<Message>> {
+    match key_code {
+        KeyCode::Esc => return Ok(Some(Message::Quit)),
+        KeyCode::Enter => return Ok(Some(Message::ConfirmMove)),
+        KeyCode::Backspace => return Ok(Some(Message::RemoveChar)),
+        KeyCode::Char(chr) => return handle_char(chr),
+        KeyCode::Tab => return Ok(Some(Message::AcceptBestMove)),
+        _ => Ok(None),
     }
 }
 

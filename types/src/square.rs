@@ -1,4 +1,4 @@
-use std::{fmt::Display, mem::transmute};
+use std::{fmt::Display, mem::transmute, str::FromStr};
 
 use crate::{file::File, rank::Rank};
 
@@ -99,6 +99,30 @@ impl Square {
 impl Display for Square {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}{}", self.file().char(), self.rank().char())
+    }
+}
+
+pub struct ParseSquareError;
+
+impl FromStr for Square {
+    type Err = ParseSquareError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if s.len() != 2 {
+            return Err(ParseSquareError);
+        }
+
+        if !s.is_ascii() {
+            return Err(ParseSquareError);
+        }
+
+        let file =
+            File::from_char(s.chars().next().ok_or(ParseSquareError)?).ok_or(ParseSquareError)?;
+
+        let rank =
+            Rank::from_char(s.chars().nth(1).ok_or(ParseSquareError)?).ok_or(ParseSquareError)?;
+
+        Ok(Self::of(file, rank))
     }
 }
 
