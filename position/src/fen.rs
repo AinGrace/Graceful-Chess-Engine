@@ -241,11 +241,11 @@ fn parse_ep_square<'a>(
         let rank = Rank::from_char(chars.next().ok_or(FenError("Invalid ep data".into()))?)
             .ok_or(FenError("Invalid ep rank".into()))?;
 
-        if rank != Rank::Third || rank != Rank::Sixth {
-            return Err(FenError("Invalid ep rank".into()));
+        if rank == Rank::Third || rank == Rank::Sixth {
+            return Ok(Some(Square::of(file, rank)));
         }
 
-        Some(Square::of(file, rank))
+        return Err(FenError(format!("Invalid ep rank: {rank:?}")));
     };
 
     Ok(ep_sqr)

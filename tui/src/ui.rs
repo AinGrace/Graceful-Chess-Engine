@@ -7,30 +7,20 @@ use ratatui::{
     text::{Line, Span},
     widgets::{Block, BorderType, List, Paragraph, Wrap},
 };
-use types::{chess_move::Move, file::File, piece::Piece, rank::Rank, square::Square};
+use types::{file::File, piece::Piece, rank::Rank, square::Square};
 
-use crate::model::Model;
+use crate::model::{FocusMode, Model};
 
-// TODO move into model
 pub fn global_render(frame: &mut Frame, model: &mut Model) {
-    let main_area_and_bottom_status_bar =
-        Layout::vertical([Constraint::Fill(1), Constraint::Length(2)]).split(frame.area());
-
-    let left_middle_right = Layout::horizontal(Constraint::from_percentages([35, 30, 35]))
-        .split(main_area_and_bottom_status_bar[0]);
+    let left_middle_right =
+        Layout::horizontal(Constraint::from_percentages([30, 40, 30])).split(frame.area());
 
     let middle_top_bottom =
-        Layout::vertical([Constraint::Fill(1), Constraint::Max(3)]).split(left_middle_right[1]);
+        Layout::vertical([Constraint::Fill(1), Constraint::Max(3), Constraint::Max(3)])
+            .split(left_middle_right[1]);
 
     let right_top_bottom =
         Layout::vertical(Constraint::from_percentages([60, 40])).split(left_middle_right[2]);
-
-    // {
-    //     let ui_areas = model.ui_areas_mut();
-    //     ui_areas.set_chessboard_area(middle_top_bottom[0]);
-    //     ui_areas.set_history_area(right_top_bottom[1]);
-    //     ui_areas.
-    // }
 
     let log_box = build_logs(model.logs().to_vec());
     if let Some(scroll) = model.take_scrolling()
@@ -50,8 +40,9 @@ pub fn global_render(frame: &mut Frame, model: &mut Model) {
     let info_box = build_info(model);
     frame.render_widget(info_box, right_top_bottom[0]);
 
-    let input_box = build_input_box(model);
-    frame.render_widget(input_box, middle_top_bottom[1]);
+    let (move_input_box, fen_input_box) = build_input_boxes(model);
+    frame.render_widget(move_input_box, middle_top_bottom[1]);
+    frame.render_widget(fen_input_box, middle_top_bottom[2]);
 
     let history_box = build_history(model);
     frame.render_widget(history_box, right_top_bottom[1]);
@@ -75,12 +66,33 @@ fn build_history(model: &Model) -> Paragraph<'_> {
         .wrap(Wrap { trim: true })
 }
 
-fn build_input_box(model: &Model) -> Paragraph<'static> {
-    let input_line = Line::from(format!("Input: {}", model.partial_move_to_string()));
+fn build_input_boxes(model: &Model) -> (Paragraph<'static>, Paragraph<'static>) {
+    let mut move_input_block = Block::bordered()
+        .title("Move")
+        .border_style(Style::new().yellow());
 
-    Paragraph::new(vec![input_line])
-        .block(Block::bordered().border_style(Style::new().yellow()))
-        .left_aligned()
+    let mut fen_input_block = Block::bordered()
+        .title("Fen")
+        .border_style(Style::new().yellow());
+
+    match model.focus() {
+        FocusMode::MoveInput => {
+            fen_input_block = fen_input_block.border_style(Style::new().dark_gray())
+        }
+        FocusMode::FenInput => {
+            move_input_block = move_input_block.border_style(Style::new().dark_gray())
+        }
+    };
+
+    let move_input = Paragraph::new(model.partial_move_to_string())
+        .block(move_input_block)
+        .left_aligned();
+    
+    let fen_input = Paragraph::new(model.partial_fen_to_string())
+        .block(fen_input_block)
+        .left_aligned();
+
+    (move_input, fen_input)
 }
 
 fn build_info(model: &Model) -> Paragraph<'_> {

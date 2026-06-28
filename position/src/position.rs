@@ -517,8 +517,8 @@ impl Position {
 
         if let Some(ep_sqr) = self.ep_square {
             let (offset, expected_pawn) = match our {
-                Color::White => (-8, Piece::WPawn),
-                Color::Black => (8, Piece::BPawn),
+                Color::White => (-8, Piece::BPawn),
+                Color::Black => (8, Piece::WPawn),
             };
 
             let captured_pawn = ep_sqr.offset_checked(offset);
@@ -995,5 +995,14 @@ mod tests {
         }
 
         assert_eq!(board, before)
+    }
+
+    #[test]
+    fn test_particular_fen() {
+        let raw_fen = "rnbqkbnr/pp1ppppp/8/2p5/4P3/8/PPPP1PPP/RNBQKBNR w KQkq c6 0 2";
+        let maybe_fen = Fen::new(raw_fen).unwrap(); 
+        println!("{maybe_fen}");
+
+        let pos = maybe_fen.into_position().unwrap();
     }
 }

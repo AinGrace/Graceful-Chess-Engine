@@ -1,16 +1,16 @@
 use color_eyre::eyre::Ok;
 use ratatui::crossterm::{
     self,
-    event::{Event, KeyCode},
+    event::{Event, KeyCode, KeyEvent, KeyModifiers},
 };
 
 use crate::model::{Model, Scrolling};
 
 #[derive(PartialEq, Debug)]
 pub enum Message {
-    PartialMove(char),
+    PushChar(char),
     RemoveChar,
-    ConfirmMove,
+    Confirm,
     UndoMove,
     SearchIncrement,
     SearchDecrement,
@@ -20,38 +20,20 @@ pub enum Message {
     Search,
     Quit,
     AcceptBestMove,
+    ChangeFocus,
 }
 
 pub fn update(model: &mut Model, msg: Message) {
     match msg {
-        Message::PartialMove(chr) => {
-            model.push_partial_move(chr);
-            model.info_log(format!("pushed [{chr}] to partial_move stack"));
+        Message::PushChar(chr) => {
+            model.push_char(chr);
         }
-
         Message::RemoveChar => {
-            if let Some(chr) = model.pop_partial_move() {
-                model.info_log(format!("removed [{chr}] from partial_move stack"));
-            }
+            model.pop_char();
         }
-
-        Message::ConfirmMove => {
-            if let Some(applied_move) = model.make_move(&model.partial_move_to_string()) {
-                model.info_log(format!("applied move [{applied_move}]"));
-            }
-        }
-
-        Message::UndoMove => {
-            if let Some(unmade_move) = model.undo_move() {
-                model.info_log(format!("reversed the move {unmade_move}"));
-            }
-        }
-
-        Message::AcceptBestMove => {
-            if let Some(best_move) = model.play_best_move() {
-                model.info_log(format!("applied engine suggested move [{best_move}]"));
-            }
-        }
+        Message::Confirm => model.confirm_action(),
+        Message::UndoMove => model.undo_move(),
+        Message::AcceptBestMove => model.play_best_move(),
         Message::Quit => model.quit(),
         Message::SearchIncrement => model.set_search_depth(model.search_depth().saturating_add(1)),
         Message::SearchDecrement => model.set_search_depth(model.search_depth().saturating_sub(1)),
@@ -62,8 +44,8 @@ pub fn update(model: &mut Model, msg: Message) {
         Message::MouseScrollUp { col, row } => {
             model.set_scrolling(Scrolling::Up { col, row });
         }
-        Message::MouseMove { col, row } => {
-        }
+        Message::MouseMove { col, row } => {}
+        Message::ChangeFocus => model.change_focus(),
     }
 }
 
@@ -71,7 +53,7 @@ pub fn handle_event() -> color_eyre::Result<Option<Message>> {
     match crossterm::event::read()? {
         Event::FocusGained => Ok(None),
         Event::FocusLost => Ok(None),
-        Event::Key(key_event) => handle_key(key_event.code),
+        Event::Key(key_event) => handle_key(key_event),
         Event::Mouse(mouse_event) => handle_mouse(mouse_event),
         Event::Paste(_) => Ok(None),
         Event::Resize(_, _) => Ok(None),
@@ -112,24 +94,40 @@ fn handle_mouse(mouse_event: crossterm::event::MouseEvent) -> color_eyre::Result
     }
 }
 
-fn handle_key(key_code: KeyCode) -> color_eyre::Result<Option<Message>> {
-    match key_code {
+fn handle_key(key_event: KeyEvent) -> color_eyre::Result<Option<Message>> {
+    match key_event.code {
         KeyCode::Esc => return Ok(Some(Message::Quit)),
-        KeyCode::Enter => return Ok(Some(Message::ConfirmMove)),
+        KeyCode::Enter => return Ok(Some(Message::Confirm)),
         KeyCode::Backspace => return Ok(Some(Message::RemoveChar)),
-        KeyCode::Char(chr) => return handle_char(chr),
-        KeyCode::Tab => return Ok(Some(Message::AcceptBestMove)),
+        KeyCode::Char(chr) if key_event.modifiers.is_empty() => return handle_plain_char(chr),
+        KeyCode::Char(chr) => return handle_modified_char(key_event.modifiers, chr),
+        KeyCode::Tab => return Ok(Some(Message::ChangeFocus)),
         _ => Ok(None),
     }
 }
 
-fn handle_char(chr: char) -> color_eyre::Result<Option<Message>> {
+fn handle_modified_char(modifiers: KeyModifiers, chr: char) -> color_eyre::Result<Option<Message>> {
+    if modifiers == KeyModifiers::ALT {
+        return match chr {
+            's' => Ok(Some(Message::Search)),
+            'e' => Ok(Some(Message::AcceptBestMove)),
+            'u' => Ok(Some(Message::UndoMove)),
+            'n' => Ok(Some(Message::SearchIncrement)),
+            'p' => Ok(Some(Message::SearchDecrement)),
+            _rest => Ok(None),
+        };
+    }
+
+    if modifiers == KeyModifiers::SHIFT {
+        return Ok(Some(Message::PushChar(chr.to_ascii_uppercase())));
+    }
+
+    Ok(None)
+}
+
+fn handle_plain_char(chr: char) -> color_eyre::Result<Option<Message>> {
     match chr {
-        'u' => Ok(Some(Message::UndoMove)),
-        'a'..='h' | '1'..='8' => Ok(Some(Message::PartialMove(chr))),
-        '+' => Ok(Some(Message::SearchIncrement)),
-        '-' => Ok(Some(Message::SearchDecrement)),
-        's' => Ok(Some(Message::Search)),
+        chr if chr.is_ascii() => Ok(Some(Message::PushChar(chr))),
         _rest => Ok(None),
     }
 }

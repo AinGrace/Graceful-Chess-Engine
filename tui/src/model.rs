@@ -4,7 +4,10 @@ use std::{
 };
 
 use engine::{eval, search};
-use position::position::{Position, Undo};
+use position::{
+    fen::Fen,
+    position::{Position, Undo},
+};
 use ratatui::{
     Frame,
     layout::{Constraint, Layout, Rect},
@@ -30,6 +33,12 @@ impl Scrolling {
             Scrolling::Up { row, .. } | Scrolling::Down { row, .. } => *row,
         }
     }
+}
+
+#[derive(Clone, Copy)]
+pub enum FocusMode {
+    MoveInput,
+    FenInput,
 }
 
 #[derive(Default)]
@@ -75,6 +84,7 @@ pub struct Model {
     legal_moves: MoveList,
 
     partial_move: Vec<char>,
+    partial_fen: Vec<char>,
     move_history: Vec<Move>,
     best_move: Option<Move>,
     undo: Vec<Undo>,
@@ -86,6 +96,8 @@ pub struct Model {
     search_depth: u8,
 
     scrolling: Option<Scrolling>,
+
+    focus: FocusMode,
 
     /// column and row
     mouse_hover: Option<(u16, u16)>,
@@ -102,6 +114,7 @@ impl Model {
 
         let legal_moves = pos.legal_moves();
         let partial_move = Vec::with_capacity(5);
+        let partial_fen = Vec::with_capacity(20);
         let move_history = Vec::with_capacity(128);
         let undo = Vec::with_capacity(128);
 
@@ -115,6 +128,8 @@ impl Model {
         let search_time = time_end.duration_since(time_begin);
         let search_depth = 4;
 
+        let focus = FocusMode::MoveInput;
+
         let scrolling = None;
         let mouse_hover = None;
         let selected_square = None;
@@ -127,6 +142,7 @@ impl Model {
             pos,
             legal_moves,
             partial_move,
+            partial_fen,
             move_history,
             best_move,
             undo,
@@ -134,6 +150,7 @@ impl Model {
             log_state,
             search_time,
             search_depth,
+            focus,
             scrolling,
             mouse_hover,
             selected_square,
@@ -217,6 +234,10 @@ impl Model {
         self.partial_move.iter().collect()
     }
 
+    pub fn partial_fen_to_string(&self) -> String {
+        self.partial_fen.iter().collect()
+    }
+
     pub fn ep_square_to_str(&self) -> String {
         self.pos
             .ep_square()
@@ -260,15 +281,19 @@ impl Model {
         self.pos.zobrist_hash()
     }
 
+    pub fn focus(&self) -> FocusMode {
+        self.focus
+    }
+
     pub fn log_state(&mut self) -> &mut ListState {
         &mut self.log_state
     }
 
-    pub fn make_move<'a>(&mut self, raw_uci: &'a str) -> Option<&'a str> {
+    pub fn make_move(&mut self, raw_uci: &str) {
         let mv = self.legal_moves.iter().find(|mv| mv.to_uci() == raw_uci);
 
         let Some(mv) = mv else {
-            return None;
+            return;
         };
 
         let undo = self.pos.do_move_inner(*mv);
@@ -279,11 +304,10 @@ impl Model {
         self.partial_move.clear();
 
         self.update_best_move();
-
-        Some(raw_uci)
+        self.info_log(format!("applied move [{raw_uci}]"));
     }
 
-    pub fn undo_move(&mut self) -> Option<String> {
+    pub fn undo_move(&mut self) {
         if let Some(undo) = self.undo.pop() {
             self.pos.undo_move(undo);
             self.legal_moves = self.pos.legal_moves();
@@ -295,19 +319,14 @@ impl Model {
                 .to_uci();
 
             self.update_best_move();
-
-            Some(unmade_move)
-        } else {
-            None
+            self.info_log(format!("reversed the move {unmade_move}"));
         }
     }
 
-    pub fn play_best_move(&mut self) -> Option<String> {
+    pub fn play_best_move(&mut self) {
         if let Some(best_move) = self.best_move.map(|mv| mv.to_uci()).take() {
-            let _ = self.make_move(&best_move);
-            Some(best_move)
-        } else {
-            None
+            self.make_move(&best_move);
+            self.info_log(format!("applied engine suggested move [{best_move}]"));
         }
     }
 
@@ -323,16 +342,60 @@ impl Model {
         self.exit = true
     }
 
-    pub fn push_partial_move(&mut self, chr: char) {
-        self.partial_move.push(chr);
+    pub fn push_char(&mut self, chr: char) {
+        match self.focus {
+            FocusMode::MoveInput => self.push_partial_move(chr),
+            FocusMode::FenInput => self.push_partial_fen(chr),
+        }
     }
 
-    pub fn pop_partial_move(&mut self) -> Option<char> {
-        self.partial_move.pop()
+    pub fn push_partial_move(&mut self, chr: char) {
+        let valid_chars = matches!(chr, 'a'..='h' | '1'..='8');
+        if matches!(self.focus, FocusMode::MoveInput) && valid_chars {
+            self.partial_move.push(chr);
+            self.info_log(format!("pushed [{chr}] to partial_move stack"));
+        }
+    }
+
+    pub fn pop_partial_move(&mut self) {
+        if matches!(self.focus, FocusMode::MoveInput)
+            && let Some(chr) = self.partial_move.pop()
+        {
+            self.info_log(format!("removed [{chr}] from partial_move stack"));
+        }
+    }
+
+    pub fn push_partial_fen(&mut self, chr: char) {
+        if matches!(self.focus, FocusMode::FenInput) {
+            self.partial_fen.push(chr);
+            self.info_log(format!("pushed [{chr}] to partial_fen stack"));
+        }
+    }
+
+    pub fn pop_partial_fen(&mut self) {
+        if matches!(self.focus, FocusMode::FenInput)
+            && let Some(chr) = self.partial_fen.pop()
+        {
+            self.info_log(format!("removed [{chr}] from partial_fen stack"));
+        }
+    }
+
+    pub fn pop_char(&mut self) {
+        match self.focus {
+            FocusMode::MoveInput => self.pop_partial_move(),
+            FocusMode::FenInput => self.pop_partial_fen(),
+        }
     }
 
     pub fn set_search_depth(&mut self, depth: u8) {
         self.search_depth = depth;
+    }
+
+    pub fn confirm_action(&mut self) {
+        match self.focus {
+            FocusMode::MoveInput => self.make_move(&self.partial_move_to_string()),
+            FocusMode::FenInput => self.apply_fen(),
+        }
     }
 
     pub fn ui_areas_mut(&mut self) -> &mut UiAreas {
@@ -351,5 +414,45 @@ impl Model {
 
     pub fn take_scrolling(&mut self) -> Option<Scrolling> {
         self.scrolling.take()
+    }
+
+    pub fn change_focus(&mut self) {
+        self.focus = match self.focus {
+            FocusMode::MoveInput => FocusMode::FenInput,
+            FocusMode::FenInput => FocusMode::MoveInput,
+        };
+    }
+
+    fn apply_fen(&mut self) {
+        let raw_fen = self.partial_fen_to_string();
+        let maybe_fen = Fen::new(&raw_fen);
+
+        match maybe_fen {
+            Ok(fen_struct) => {
+                let maybe_pos = fen_struct.into_position();
+                match maybe_pos {
+                    Ok(pos) => {
+                        self.pos = pos;
+                        self.legal_moves = self.pos.legal_moves();
+                        self.partial_move.clear();
+                        self.partial_fen.clear();
+                        self.move_history.clear();
+                        self.undo.clear();
+
+                        let time_begin = Instant::now();
+                        let best_move = search::negamax(&mut self.pos, 4, 0).1;
+                        let time_end = Instant::now();
+
+                        self.search_time = time_end.duration_since(time_begin);
+                        self.search_depth = 4;
+                        self.best_move = best_move
+                    }
+                    Err(e) => {
+                        self.info_log(e.to_string());
+                    }
+                }
+            }
+            Err(e) => self.info_log(e.to_string()),
+        }
     }
 }
