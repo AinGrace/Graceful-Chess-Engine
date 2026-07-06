@@ -87,7 +87,7 @@ fn build_input_boxes(model: &Model) -> (Paragraph<'static>, Paragraph<'static>) 
     let move_input = Paragraph::new(model.partial_move_to_string())
         .block(move_input_block)
         .left_aligned();
-    
+
     let fen_input = Paragraph::new(model.partial_fen_to_string())
         .block(fen_input_block)
         .left_aligned();
@@ -127,73 +127,23 @@ fn build_info(model: &Model) -> Paragraph<'_> {
         line("Half moves", &model.half_moves()),
         line("Full moves", &model.full_moves()),
         line("Zobrist hash", &model.z_hash()),
+        line("FEN", &model.position_fen()),
         Line::from(format!("Legal moves for selection: {legal_moves}")),
     ])
     .block(Block::bordered().title("Info"))
     .wrap(Wrap { trim: true })
 }
 
-fn build_chessboard(model: &mut Model) -> Paragraph<'_> {
+fn build_chessboard(model: &mut Model) -> Paragraph<'static> {
     const LIGHT: Color = Color::Rgb(240, 217, 181);
     const DARK: Color = Color::Rgb(181, 136, 99);
 
-    let partial_move_from = Square::from_str(&model.left_partial_move().unwrap_or_default()).ok();
-    let partial_move_to = Square::from_str(&model.right_partial_move().unwrap_or_default()).ok();
+    let partial_from = Square::from_str(&model.left_partial_move().unwrap_or_default()).ok();
+    let partial_to = Square::from_str(&model.right_partial_move().unwrap_or_default()).ok();
 
     let mut lines: Vec<Line> = (0..8)
         .rev()
-        .map(|rank| {
-            let mut spans = vec![Span::raw(format!("{} ", rank + 1))];
-
-            for file in 0..8 {
-                let square = Square::of(File::from_u32_checked(file), Rank::from_u32_checked(rank));
-                let piece = model.peek_piece_at(square);
-                let symbol = piece.map(piece_to_unicode).unwrap_or(" ");
-
-                let bg = match () {
-                    _ if partial_move_to == Some(square) => {
-                        if model.is_legal_dest(square) {
-                            Color::Green
-                        } else {
-                            Color::LightRed
-                        }
-                    }
-                    _ if partial_move_from == Some(square) => {
-                        if model.is_legal_origin(square) {
-                            Color::LightGreen
-                        } else {
-                            Color::LightRed
-                        }
-                    }
-                    _ if partial_move_from
-                        .is_some_and(|from| model.is_legal_orig_dest_for(from, square)) =>
-                    {
-                        Color::Yellow
-                    }
-                    _ => {
-                        if square.is_dark_square() {
-                            DARK
-                        } else {
-                            LIGHT
-                        }
-                    }
-                };
-
-                let fg = piece.map(|p| match p.color() {
-                    types::color::Color::White => Color::Rgb(255, 255, 255),
-                    types::color::Color::Black => Color::Rgb(0, 0, 0),
-                });
-
-                let style = match fg {
-                    Some(fg) => Style::new().bg(bg).fg(fg),
-                    None => Style::new().bg(bg),
-                };
-
-                spans.push(Span::styled(format!("  {symbol}  "), style));
-            }
-
-            Line::from(spans)
-        })
+        .map(|rank| build_rank_line(model, rank, partial_from, partial_to, LIGHT, DARK))
         .collect();
 
     lines.push(Line::raw("    A    B    C    D    E    F    G    H"));
@@ -204,6 +154,127 @@ fn build_chessboard(model: &mut Model) -> Paragraph<'_> {
             .border_type(BorderType::Rounded)
             .border_style(Style::new().green()),
     )
+}
+
+fn build_rank_line(
+    model: &Model,
+    rank: u32,
+    partial_from: Option<Square>,
+    partial_to: Option<Square>,
+    light: Color,
+    dark: Color,
+) -> Line<'static> {
+    let mut spans = vec![Span::raw(format!("{} ", rank + 1))];
+
+    for file in 0..8 {
+        let square = Square::of(File::from_u32_checked(file), Rank::from_u32_checked(rank));
+        let piece = model.peek_piece_at(square);
+        let bg = square_background(model, square, piece, partial_from, partial_to, light, dark);
+
+        let span = match piece {
+            Some(piece) => {
+                let fg = match piece.color() {
+                    types::color::Color::White => Color::Rgb(255, 255, 255),
+                    types::color::Color::Black => Color::Rgb(0, 0, 0),
+                };
+                Span::styled(
+                    format!("  {}  ", piece_to_unicode(piece)),
+                    Style::new().bg(bg).fg(fg),
+                )
+            }
+            None => Span::styled("     ", Style::new().bg(bg)),
+        };
+
+        spans.push(span);
+    }
+
+    Line::from(spans)
+}
+
+fn square_background(
+    model: &Model,
+    square: Square,
+    piece: Option<Piece>,
+    partial_from: Option<Square>,
+    partial_to: Option<Square>,
+    light: Color,
+    dark: Color,
+) -> Color {
+    let base = || if square.is_dark_square() { dark } else { light };
+
+    if let Some(piece) = piece {
+        return occupied_square_background(model, square, piece, partial_from, partial_to, base);
+    }
+
+    empty_square_background(model, square, partial_from, partial_to, base)
+}
+
+fn occupied_square_background(
+    model: &Model,
+    square: Square,
+    piece: Piece,
+    partial_from: Option<Square>,
+    partial_to: Option<Square>,
+    base: impl Fn() -> Color,
+) -> Color {
+    if partial_from == Some(square) {
+        return if model.is_legal_origin(square) {
+            Color::LightGreen
+        } else {
+            Color::Gray
+        };
+    }
+
+    if partial_to == Some(square) {
+        return if model.is_legal_dest(piece.role(), square) {
+            Color::Red
+        } else {
+            Color::Gray
+        };
+    }
+
+    base()
+}
+
+fn empty_square_background(
+    model: &Model,
+    square: Square,
+    partial_from: Option<Square>,
+    partial_to: Option<Square>,
+    base: impl Fn() -> Color,
+) -> Color {
+    debug_assert!(
+        partial_from.is_some() || partial_to.is_none(),
+        "destination cannot be Some(_) without an origin"
+    );
+
+    let Some(from) = partial_from else {
+        return base();
+    };
+
+    if let Some(to) = partial_to
+        && square == to
+    {
+        return destination_square_background(model, from, to);
+    }
+
+    if model.has_legal_origin_and_destination(from, square) {
+        Color::Yellow
+    } else {
+        base()
+    }
+}
+
+fn destination_square_background(model: &Model, from: Square, to: Square) -> Color {
+    let is_legal = model
+        .peek_piece_at(from)
+        .is_some_and(|piece| model.is_legal_dest(piece.role(), to));
+
+    if is_legal {
+        Color::LightGreen
+    } else {
+        Color::Gray
+    }
 }
 
 fn build_logs(logs: Vec<String>) -> List<'static> {

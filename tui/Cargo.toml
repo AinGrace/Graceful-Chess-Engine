@@ -9,3 +9,4 @@ types = { path = "../types"}
 position = { path = "../position"}
 engine = { path = "../engine"}
 color-eyre = "0.6.5"
+arboard = "3.6.1"

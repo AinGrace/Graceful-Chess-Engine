@@ -8,12 +8,10 @@ use position::{
     fen::Fen,
     position::{Position, Undo},
 };
-use ratatui::{
-    Frame,
-    layout::{Constraint, Layout, Rect},
-    widgets::ListState,
-};
-use types::{MoveList, chess_move::Move, color::Color, piece::Piece, square::Square};
+use ratatui::widgets::ListState;
+use types::{MoveList, chess_move::Move, color::Color, piece::Piece, role::Role, square::Square};
+
+use crate::copy_to_clipboard;
 
 pub enum Scrolling {
     Up { col: u16, row: u16 },
@@ -41,43 +39,6 @@ pub enum FocusMode {
     FenInput,
 }
 
-#[derive(Default)]
-pub struct UiAreas {
-    log_area: Rect,
-    chessboard_area: Rect,
-    history_area: Rect,
-}
-
-impl UiAreas {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    pub fn log_area(&self) -> Rect {
-        self.log_area
-    }
-
-    pub fn chessboard_area(&self) -> Rect {
-        self.chessboard_area
-    }
-
-    pub fn history_area(&self) -> Rect {
-        self.history_area
-    }
-
-    pub fn set_log_area(&mut self, area: Rect) {
-        self.log_area = area;
-    }
-
-    pub fn set_chessboard_area(&mut self, area: Rect) {
-        self.chessboard_area = area;
-    }
-
-    pub fn set_history_area(&mut self, area: Rect) {
-        self.history_area = area;
-    }
-}
-
 pub struct Model {
     pos: Position,
 
@@ -98,12 +59,6 @@ pub struct Model {
     scrolling: Option<Scrolling>,
 
     focus: FocusMode,
-
-    /// column and row
-    mouse_hover: Option<(u16, u16)>,
-    selected_square: Option<Square>,
-
-    ui_areas: UiAreas,
 
     exit: bool,
 }
@@ -131,10 +86,6 @@ impl Model {
         let focus = FocusMode::MoveInput;
 
         let scrolling = None;
-        let mouse_hover = None;
-        let selected_square = None;
-
-        let ui_areas = UiAreas::default();
 
         let exit = false;
 
@@ -152,28 +103,8 @@ impl Model {
             search_depth,
             focus,
             scrolling,
-            mouse_hover,
-            selected_square,
-            ui_areas,
             exit,
         }
-    }
-
-    pub fn ui_areas(&self) -> &UiAreas {
-        &self.ui_areas
-    }
-
-    pub fn set_ui_areas(&mut self, frame: &Frame) {
-        let left_middle_right =
-            Layout::horizontal(Constraint::from_percentages([35, 30, 35])).split(frame.area());
-
-        let middle_top_bottom =
-            Layout::vertical([Constraint::Fill(1), Constraint::Max(3)]).split(left_middle_right[1]);
-
-        let right_top_bottom =
-            Layout::vertical(Constraint::from_percentages([60, 40])).split(left_middle_right[2]);
-
-        todo!()
     }
 
     pub fn should_exit(&self) -> bool {
@@ -188,11 +119,20 @@ impl Model {
         self.legal_moves.iter().any(|mv| mv.from() == from)
     }
 
-    pub fn is_legal_dest(&self, to: Square) -> bool {
-        self.legal_moves.iter().any(|mv| mv.to() == to)
+    pub fn copy_fen_to_clipboard(&mut self) {
+        match copy_to_clipboard(&self.position_fen()) {
+            Ok(_) => (),
+            Err(e) => self.info_log(e.to_string()),
+        }
     }
 
-    pub fn is_legal_orig_dest_for(&self, from: Square, to: Square) -> bool {
+    pub fn is_legal_dest(&self, role: Role, to: Square) -> bool {
+        self.legal_moves
+            .iter()
+            .any(|mv| mv.role() == role && mv.to() == to)
+    }
+
+    pub fn has_legal_origin_and_destination(&self, from: Square, to: Square) -> bool {
         self.legal_moves
             .iter()
             .any(|mv| mv.from() == from && mv.to() == to)
@@ -206,6 +146,10 @@ impl Model {
             .map(|mv| mv.to_uci())
             .map(Some)
             .collect()
+    }
+
+    pub fn position_fen(&self) -> String {
+        self.pos.into_fen().to_string()
     }
 
     pub fn left_partial_move(&self) -> Option<String> {
@@ -326,7 +270,6 @@ impl Model {
     pub fn play_best_move(&mut self) {
         if let Some(best_move) = self.best_move.map(|mv| mv.to_uci()).take() {
             self.make_move(&best_move);
-            self.info_log(format!("applied engine suggested move [{best_move}]"));
         }
     }
 
@@ -353,7 +296,7 @@ impl Model {
         let valid_chars = matches!(chr, 'a'..='h' | '1'..='8');
         if matches!(self.focus, FocusMode::MoveInput) && valid_chars {
             self.partial_move.push(chr);
-            self.info_log(format!("pushed [{chr}] to partial_move stack"));
+            // self.info_log(format!("pushed [{chr}] to partial_move stack"));
         }
     }
 
@@ -361,14 +304,14 @@ impl Model {
         if matches!(self.focus, FocusMode::MoveInput)
             && let Some(chr) = self.partial_move.pop()
         {
-            self.info_log(format!("removed [{chr}] from partial_move stack"));
+            // self.info_log(format!("removed [{chr}] from partial_move stack"));
         }
     }
 
     pub fn push_partial_fen(&mut self, chr: char) {
         if matches!(self.focus, FocusMode::FenInput) {
             self.partial_fen.push(chr);
-            self.info_log(format!("pushed [{chr}] to partial_fen stack"));
+            // self.info_log(format!("pushed [{chr}] to partial_fen stack"));
         }
     }
 
@@ -376,7 +319,7 @@ impl Model {
         if matches!(self.focus, FocusMode::FenInput)
             && let Some(chr) = self.partial_fen.pop()
         {
-            self.info_log(format!("removed [{chr}] from partial_fen stack"));
+            // self.info_log(format!("removed [{chr}] from partial_fen stack"));
         }
     }
 
@@ -396,10 +339,6 @@ impl Model {
             FocusMode::MoveInput => self.make_move(&self.partial_move_to_string()),
             FocusMode::FenInput => self.apply_fen(),
         }
-    }
-
-    pub fn ui_areas_mut(&mut self) -> &mut UiAreas {
-        &mut self.ui_areas
     }
 
     pub fn info_log(&mut self, log: String) {

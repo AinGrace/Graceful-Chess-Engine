@@ -1,7 +1,9 @@
 use std::{
-    io::{self, Write, stdout}, thread,
+    io::{self, Write, stdout},
+    thread,
 };
 
+use arboard::Clipboard;
 use color_eyre::eyre::{Ok, Result, bail};
 use ratatui::{
     DefaultTerminal,
@@ -22,10 +24,9 @@ mod update;
 
 fn main() -> color_eyre::Result<()> {
     color_eyre::install()?;
-
     stdout().execute(event::EnableMouseCapture)?;
-
     ratatui::run(|term| app(term))?;
+
     Ok(())
 }
 
@@ -47,10 +48,17 @@ fn app(terminal: &mut DefaultTerminal) -> color_eyre::Result<()> {
     Ok(())
 }
 
-fn assert_size(size: ratatui::prelude::Size) -> Result<()> {
+fn assert_size(size: ratatui::prelude::Size) -> color_eyre::Result<()> {
     if size.height < 30 {
         bail!("term height is too small")
     }
+
+    Ok(())
+}
+
+fn copy_to_clipboard(text: &str) -> color_eyre::Result<()> {
+    let mut clipboard = Clipboard::new()?;
+    clipboard.set_text(text)?;
 
     Ok(())
 }

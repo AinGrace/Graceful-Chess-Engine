@@ -17,6 +17,7 @@ pub enum Message {
     MouseMove { col: u16, row: u16 },
     MouseScrollDown { col: u16, row: u16 },
     MouseScrollUp { col: u16, row: u16 },
+    CopyFenToClipboard,
     Search,
     Quit,
     AcceptBestMove,
@@ -46,6 +47,7 @@ pub fn update(model: &mut Model, msg: Message) {
         }
         Message::MouseMove { col, row } => {}
         Message::ChangeFocus => model.change_focus(),
+        Message::CopyFenToClipboard => model.copy_fen_to_clipboard(),
     }
 }
 
@@ -114,6 +116,7 @@ fn handle_modified_char(modifiers: KeyModifiers, chr: char) -> color_eyre::Resul
             'u' => Ok(Some(Message::UndoMove)),
             'n' => Ok(Some(Message::SearchIncrement)),
             'p' => Ok(Some(Message::SearchDecrement)),
+            'c' => Ok(Some(Message::CopyFenToClipboard)),
             _rest => Ok(None),
         };
     }

@@ -1,4 +1,7 @@
-use crate::{role::Role, square::Square};
+use crate::{
+    role::Role::{self, Pawn},
+    square::Square,
+};
 
 pub enum CastlingSide {
     WShort,
@@ -120,6 +123,20 @@ impl Move {
             Move::Standard { to, .. } => *to,
             Move::EnPassant { to, .. } => *to,
             Move::Castling { rook, .. } => *rook,
+        }
+    }
+
+    pub fn role(&self) -> Role {
+        match self {
+            Move::Standard {
+                role,
+                from,
+                to,
+                capture,
+                promotion,
+            } => *role,
+            Move::EnPassant { from, to } => Pawn,
+            Move::Castling { king, rook } => Role::King,
         }
     }
 
