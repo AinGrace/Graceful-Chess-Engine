@@ -9,8 +9,6 @@ use crate::eval::constants::{
 #[rustfmt::skip]
 pub(crate) mod constants {
 
-    pub const MATE_SCORE: i32 = 100_000;
-    pub const DRAW_SCORE: i32 = 0;
     pub const NEG_INF: i32 = -1_000_000;
 
     /// assign 100 as default pawn value instead of 1 in order to avoid floating point calculations

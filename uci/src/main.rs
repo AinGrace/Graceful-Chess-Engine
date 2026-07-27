@@ -70,7 +70,7 @@ fn handle_go(pos: &mut Position, line: &str) {
         return;
     };
 
-    let (_score, best_move) = search::negamax(pos, depth, 0);
+    let (_score, best_move) = search::negamax(pos, depth);
     println!(
         "bestmove {} | score -> {_score}",
         best_move.unwrap().to_uci()

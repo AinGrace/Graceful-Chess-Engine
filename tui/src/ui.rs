@@ -117,7 +117,8 @@ fn build_info(model: &Model) -> Paragraph<'_> {
         line("Eval", &model.static_eval()),
         line("Turn", &model.turn().char()),
         line("Ep square", &model.ep_square_to_str()),
-        line("Best move", &model.best_move_to_uci()),
+        line("Best move ", &model.best_move_to_uci()),
+        line("Best move score", &model.best_move_score().to_string()),
         line("Search depth", &model.search_depth()),
         Line::from(format!(
             "Search time: millis → {} | micros → {}",
@@ -134,6 +135,7 @@ fn build_info(model: &Model) -> Paragraph<'_> {
     .wrap(Wrap { trim: true })
 }
 
+// TODO: move chessboard UI building into separate module
 fn build_chessboard(model: &mut Model) -> Paragraph<'static> {
     const LIGHT: Color = Color::Rgb(240, 217, 181);
     const DARK: Color = Color::Rgb(181, 136, 99);

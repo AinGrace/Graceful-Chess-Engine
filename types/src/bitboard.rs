@@ -160,6 +160,7 @@ impl Bitboard {
 
     #[rustfmt::skip]
     #[inline(always)]
+    // TODO: think about double north or south for pawn double move
     pub const fn shift_dir(self, dir: Direction) -> Self {
         match dir {
             Direction::North     => Self(self.0 << 8),
