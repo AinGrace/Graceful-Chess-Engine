@@ -114,11 +114,11 @@ fn build_info(model: &Model) -> Paragraph<'_> {
     let search_time = model.search_time();
 
     Paragraph::new(vec![
-        line("Eval", &model.static_eval()),
         line("Turn", &model.turn().char()),
         line("Ep square", &model.ep_square_to_str()),
         line("Best move ", &model.best_move_to_uci()),
-        line("Best move score", &model.best_move_score().to_string()),
+        line("Best move eval", &model.best_move_score().to_string()),
+        line("Static Eval", &model.static_eval()),
         line("Search depth", &model.search_depth()),
         Line::from(format!(
             "Search time: millis → {} | micros → {}",
