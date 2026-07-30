@@ -108,7 +108,7 @@ pub fn bishop_attacks(sq: Square, occupied: u64) -> u64 {
     // SAFETY: usize returned from Square::to_usize is always between 0 and 63
     // crate is quaranteed to be compiled and run against targets with bmi2
     unsafe {
-        let index = _pext_u64(occupied, BISHOP_MASKS[sq.as_usize()]) as usize;
+        let index = pext(occupied, BISHOP_MASKS[sq.as_usize()]) as usize;
         *BISHOP_ATTACKS.get_unchecked(BISHOP_OFFSETS[sq.as_usize()] + index)
     }
 }
@@ -118,7 +118,7 @@ pub fn rook_attacks(sq: Square, occupied: u64) -> u64 {
     // SAFETY: usize returned from Square::to_usize is always between 0 and 63
     // crate is quaranteed to be compiled and run against targets with bmi2
     unsafe {
-        let index = _pext_u64(occupied, ROOK_MASKS[sq.as_usize()]) as usize;
+        let index = pext(occupied, ROOK_MASKS[sq.as_usize()]) as usize;
         *ROOK_ATTACKS.get_unchecked(ROOK_OFFSETS[sq.as_usize()] + index)
     }
 }
@@ -587,6 +587,18 @@ const fn deposit_bits(mut subset: u64, mut mask: u64) -> u64 {
     }
 
     res
+}
+
+#[cfg(not(miri))]
+#[target_feature(enable = "bmi2")]
+unsafe fn pext(value: u64, mask: u64) -> u64 {
+    _pext_u64(value, mask)
+}
+
+#[inline(always)]
+#[cfg(miri)]
+fn pext(value: u64, mask: u64) -> u64 {
+    pext_const(value, mask)
 }
 
 /// a software level emulation of PEXT bmi2 instruction that can be used in const context
