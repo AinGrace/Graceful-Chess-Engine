@@ -74,7 +74,7 @@ pub fn negamax(pos: &mut Position, depth: u8) -> (Score, Option<Move>) {
     let moves = pos.legal_moves();
 
     if moves.is_empty() {
-        if pos.checkers(pos.turn()).present() {
+        if pos.checkers_to(pos.turn()).present() {
             return (Score::Mate(-1), None);
         } else {
             return (Score::Draw, None);

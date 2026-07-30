@@ -146,17 +146,17 @@ impl Position {
 
     /// Returns a bitboard of pieces giving check to the king
     #[inline(always)]
-    pub fn checkers(&self, side: Color) -> Bitboard {
+    pub fn checkers_to(&self, side: Color) -> Bitboard {
         let king = self.board.the_king(side);
         self.board.attacks_to(king, !side)
     }
 
     pub fn is_checkmate(&self) -> bool {
-        self.checkers(self.turn).present() && self.legal_moves().is_empty()
+        self.checkers_to(self.turn).present() && self.legal_moves().is_empty()
     }
 
     pub fn is_stalemate(&self) -> bool {
-        self.checkers(self.turn).empty() && self.legal_moves().is_empty()
+        self.checkers_to(self.turn).empty() && self.legal_moves().is_empty()
     }
 
     pub fn half_moves(&self) -> u32 {

@@ -17,7 +17,7 @@ use crate::{position::Position, move_gen::pin_info::PinInfo};
 
 pub fn gen_legal_moves(pos: &Position) -> MoveList {
     let mut moves = MoveList::new();
-    let king_checkers = pos.checkers(pos.turn());
+    let king_checkers = pos.checkers_to(pos.turn());
     let king_sqr = pos.board().the_king(pos.turn());
 
     let pin_info = PinInfo::compute(pos);
