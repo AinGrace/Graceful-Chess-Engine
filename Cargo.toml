@@ -13,14 +13,13 @@ members = [
 opt-level = 3
 lto = "fat"
 codegen-units = 1
-# panic = "abort"
 strip = true
 debug = 0
 incremental = false
 overflow-checks = false
-# force-frame-pointers = true
 
 [profile.profiling]
 inherits = "release"
 debug = 1
 strip = false
+force-frame-pointers = true
