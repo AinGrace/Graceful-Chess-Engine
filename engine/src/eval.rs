@@ -1,3 +1,5 @@
+use std::{fmt::Display, ops::Neg};
+
 use position::position::Position;
 use types::{color::Color, square::Square};
 
@@ -95,6 +97,7 @@ pub(crate) mod constants {
          20, 30, 10,  0,  0, 10, 30, 20
     ];
 
+    // TODO
     pub const KING_END_GAME_PST: [i32; 64] = [
         -50,-40,-30,-20,-20,-30,-40,-50,
         -30,-20,-10,  0,  0,-10,-20,-30,
@@ -107,7 +110,77 @@ pub(crate) mod constants {
     ];
 }
 
-pub fn static_eval(pos: &Position) -> i32 {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Score {
+    Centipawn(i32),
+    Mate(i16),
+    Draw,
+}
+
+impl Score {
+    pub fn value(self) -> i32 {
+        match self {
+            Score::Mate(val) if val > 0 => 100_000 - val as i32,
+            Score::Mate(val) => -100_000 - val as i32,
+            Score::Centipawn(val) => val,
+            Score::Draw => 0,
+        }
+    }
+
+    pub fn step(self) -> Self {
+        match self {
+            Score::Mate(val) if val >= 0 => Self::Mate(val + 1),
+            Score::Mate(val) => Self::Mate(val - 1),
+            rest => rest,
+        }
+    }
+}
+
+impl PartialOrd for Score {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for Score {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.value().cmp(&other.value())
+    }
+}
+
+impl Neg for Score {
+    type Output = Self;
+
+    fn neg(self) -> Self::Output {
+        match self {
+            Score::Centipawn(val) => Score::Centipawn(-val),
+            Score::Mate(val) => Score::Mate(-val),
+            Score::Draw => Score::Draw,
+        }
+    }
+}
+
+impl Display for Score {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                Score::Centipawn(val) => format!("{}", val),
+                Score::Mate(val) => format!("MATE IN {}", val),
+                Score::Draw => format!("DRAW"),
+            }
+        )
+    }
+}
+
+pub fn static_eval(pos: &Position) -> Score {
+    if pos.is_checkmate() {
+        return Score::Mate(0);
+    } else if pos.is_stalemate() {
+        return Score::Draw;
+    }
+
     let mobility = mobility(pos);
     let material = material_score(pos);
     let pst = calculate_pst_score(pos);
@@ -115,9 +188,9 @@ pub fn static_eval(pos: &Position) -> i32 {
     let score = mobility + material + pst;
 
     if pos.turn() == Color::White {
-        score
+        Score::Centipawn(score)
     } else {
-        -score
+        Score::Centipawn(-score)
     }
 }
 
@@ -220,6 +293,7 @@ fn calculate_piece_pst(table: &[i32; 64], square: Square, side: Color) -> i32 {
 
 #[cfg(test)]
 mod tests {
+
     use types::{chess_move::Move, role::Role};
 
     use super::*;
@@ -294,7 +368,6 @@ mod tests {
         ];
 
         for mv in moves.into_iter() {
-            println!("Making move -> {mv:?}");
             let _undo = pos.do_move(mv).unwrap();
             dbg!(&pos);
             dbg!(static_eval(&pos));

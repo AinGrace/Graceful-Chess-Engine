@@ -2,7 +2,7 @@ use rayon::prelude::*;
 use shakmaty::{Chess, Move as TheirMove, Position as TheirPosition, fen::Fen as TheirFen};
 use types::{MoveList, chess_move::Move, role::Role, square::Square};
 
-use crate::{position::Position, fen::Fen, zobrist};
+use crate::{position::Position, fen::Fen};
 
 // TODO: apply undo
 

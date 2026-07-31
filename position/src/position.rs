@@ -590,7 +590,7 @@ mod tests {
     use types::chess_move::CastlingSide;
 
     use super::*;
-    use rand::{prelude, seq::IndexedRandom};
+    use rand::seq::IndexedRandom;
 
     #[test]
     fn real_game_test() {

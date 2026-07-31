@@ -5,8 +5,9 @@ use std::{
 
 use engine::{
     eval,
-    search::{self, Score},
+    search::{self},
 };
+use engine::eval::Score;
 use position::{
     fen::Fen,
     position::{Position, Undo},
@@ -67,7 +68,7 @@ impl EngineState {
         let (best_move_score, best_move) = search::negamax(&mut pos, DEFAULT_SEARCH_DEPTH);
         let after_search = Instant::now();
 
-        let static_evaluation_score = Score::Centipawn(eval::static_eval(&pos));
+        let static_evaluation_score = eval::static_eval(&pos);
 
         let undo = Vec::with_capacity(128);
         let search_time = after_search.duration_since(before_search);
