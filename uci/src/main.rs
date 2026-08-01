@@ -57,6 +57,8 @@ fn main() {
 
             "d" => {
                 send(format!("{:#?}", pos));
+                send(format!("{}", pos.into_fen().to_string()));
+                send(format!("legal moves: {:?}", pos.legal_moves()));
             }
 
             _ => {

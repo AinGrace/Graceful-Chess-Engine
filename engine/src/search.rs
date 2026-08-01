@@ -11,7 +11,7 @@ pub fn negamax(pos: &mut Position, depth: u8) -> (Score, Option<Move>) {
         return (eval::static_eval(pos), None);
     }
 
-    let mut best_score = Score::Centipawn(NEG_INF);
+    let mut best_score = Score::Mate(0);
     let mut best_move = None;
 
     for mv in moves {
@@ -28,11 +28,16 @@ pub fn negamax(pos: &mut Position, depth: u8) -> (Score, Option<Move>) {
             best_move = Some(mv);
         }
     }
+
     (best_score, best_move)
 }
 
 #[cfg(test)]
 mod tests {
+    use std::str::FromStr;
+
+    use position::fen::Fen;
+
     use super::*;
 
     #[test]
@@ -47,5 +52,15 @@ mod tests {
         let x = negamax(&mut pos, 5);
 
         dbg!(x);
+    }
+
+    #[test]
+    fn negamax_sus_fen() {
+        let raw_fen = "8/4P3/8/1k1K4/6P1/P1Q1B3/8/8 b - - 0 74";
+        let fen = Fen::from_str(raw_fen).unwrap();
+        let mut pos = fen.into_position().unwrap();
+
+        let a = negamax(&mut pos, 4);
+        println!("negamax result -> {a:#?}");
     }
 }
