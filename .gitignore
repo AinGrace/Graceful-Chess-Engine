@@ -1,2 +1,7 @@
 /target
 .zed/debug.json
+
+/bench/results
+/bench/results/*
+/bench/stockfish
+/bench/fastchess
