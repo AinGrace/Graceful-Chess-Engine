@@ -1,0 +1,52 @@
+[engine]
+# Cargo binary produced by `cargo build --release`.
+binary = "uci"
+
+# Cargo package. Empty means default package.
+package = ""
+
+[tools]
+# Relative paths are relative to benchmark/.
+fastchess = "./fastchess"
+
+# These are looked up through PATH.
+jj = "jj"
+stockfish = "./stockfish"
+
+[test]
+time_control = "10+0.8"
+
+threads = 1
+hash_mb = 256
+
+concurrency = 1
+games = 2
+
+sprt_rounds = 10000
+gauntlet_rounds = 1
+
+opening_book = "./opening_book.pgn"
+opening_format = "pgn"
+opening_order = "random"
+opening_plies = 8
+
+output_dir = "results"
+
+[sprt]
+elo0 = 0.0
+elo1 = 5.0
+alpha = 0.05
+beta = 0.05
+
+[gauntlet]
+stockfish_elos = [
+    1600,
+    # 1700,
+    # 1800,
+    # 1900,
+    # 2000,
+    # 2100,
+    # 2200,
+    # 2300,
+    # 2400,
+]
