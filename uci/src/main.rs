@@ -1,16 +1,28 @@
 use std::{
-    io::{BufRead, stdin},
+    fs::OpenOptions,
+    io::{self, BufRead, Write, stdin},
     mem,
 };
 
 use engine::{eval, search};
 use position::{fen::Fen, position::Position};
+use tracing::info;
+use tracing_subscriber::fmt;
 
 static ENGINE_NAME: &str = "Graceful";
 static AUTHOR: &str = "AinGrace";
 
 fn main() {
+    let file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open("/home/aingrace/Graceful-Engine/bench/results/engine.log")
+        .unwrap();
+
+    fmt().with_writer(file).init();
+
     let stdin = stdin();
+    info!("engine started");
     let mut pos = Position::new();
 
     for line in stdin.lock().lines() {
@@ -20,13 +32,13 @@ fn main() {
 
         match line.as_str() {
             "uci" => {
-                println!("id name {ENGINE_NAME}");
-                println!("id author {AUTHOR}");
-                println!("uciok");
+                send(format!("id name {ENGINE_NAME}"));
+                send(format!("id author {AUTHOR}"));
+                send(format!("uciok"));
             }
 
             "isready" => {
-                println!("readyok");
+                send(format!("readyok"));
             }
 
             "ucinewgame" => {
@@ -38,7 +50,11 @@ fn main() {
             }
 
             "eval" => {
-                println!("{}", eval::static_eval(&pos));
+                send(format!("{}", eval::static_eval(&pos)));
+            }
+
+            "d" => {
+                send(format!("{:#?}", pos));
             }
 
             _ => {
@@ -65,16 +81,19 @@ fn handle_go(pos: &mut Position, line: &str) {
         return;
     };
 
-    let Ok(depth) = raw_depth.parse() else {
-        eprintln!("error trying to parse the raw depth");
-        return;
-    };
+    // let Ok(depth) = raw_depth.parse() else {
+    //     eprintln!("error trying to parse the raw depth");
+    //     return;
+    // };
 
-    let (_score, best_move) = search::negamax(pos, depth);
-    println!(
-        "bestmove {} | score -> {_score}",
-        best_move.unwrap().to_uci()
-    );
+    let (_score, maybe_best_move) = search::negamax(pos, 4);
+
+    if let Some(best_move) = maybe_best_move {
+        send(format!("info score cp {_score}"));
+        send(format!("bestmove {}", best_move.to_uci()));
+    } else {
+        send(format!("bestmove 0000"));
+    }
 }
 
 fn handle_position(pos: &mut Position, line: &str) {
@@ -89,6 +108,7 @@ fn handle_position(pos: &mut Position, line: &str) {
 
     match second_part {
         "startpos" => {
+            *pos = Position::new();
             handle_moves(pos, commands);
         }
         "fen" => {
@@ -121,4 +141,9 @@ fn handle_moves(pos: &mut Position, mut commands: std::str::SplitWhitespace<'_>)
             };
         }
     }
+}
+
+fn send(s: String) {
+    println!("{s}");
+    io::stdout().flush().expect("can't flush to stdout")
 }

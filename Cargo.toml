@@ -6,7 +6,8 @@ members = [
    "position",
    "engine",
    "tui",
-   "uci"
+   "uci",
+   "bench"
 ]
 
 [profile.release]
