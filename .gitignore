@@ -5,3 +5,5 @@
 /bench/results/*
 /bench/stockfish
 /bench/fastchess
+/bench/config.json
+/bench/config.toml

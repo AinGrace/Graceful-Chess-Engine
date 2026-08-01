@@ -22,13 +22,14 @@ fn main() {
     fmt().with_writer(file).init();
 
     let stdin = stdin();
-    info!("engine started");
     let mut pos = Position::new();
 
     for line in stdin.lock().lines() {
         let line = line.expect(
             "encountered invalid UTF-8 or something else while trying to parse stdin for uci",
         );
+
+        info!("engine got command -> {line}");
 
         match line.as_str() {
             "uci" => {
@@ -39,6 +40,7 @@ fn main() {
 
             "isready" => {
                 send(format!("readyok"));
+                info!("sent [readyok] to harness")
             }
 
             "ucinewgame" => {
@@ -62,7 +64,7 @@ fn main() {
                     handle_position(&mut pos, &line);
                 }
 
-                if line.starts_with("go depth") {
+                if line.starts_with("go") {
                     handle_go(&mut pos, &line);
                 }
             }
@@ -73,26 +75,28 @@ fn main() {
 fn handle_go(pos: &mut Position, line: &str) {
     let mut commands = line.split_whitespace();
 
-    // drop first two words i.e "go depth"
-    let _ = commands.nth(1);
+    let _ = commands.nth(0);
 
-    let Some(raw_depth) = commands.next() else {
-        eprintln!("error trying to get the raw depth");
-        return;
-    };
+    for sub_cmd in commands {
+        match sub_cmd {
+            "infinite" => {
+                info!("received unsupported command [infinite]")
+            }
+            _ => (),
+        }
+    }
 
-    // let Ok(depth) = raw_depth.parse() else {
-    //     eprintln!("error trying to parse the raw depth");
-    //     return;
-    // };
-
+    info!("starting search");
     let (_score, maybe_best_move) = search::negamax(pos, 4);
+    info!("search finished");
 
     if let Some(best_move) = maybe_best_move {
         send(format!("info score cp {_score}"));
         send(format!("bestmove {}", best_move.to_uci()));
+        info!("sent [bestmove {}] to harness", best_move.to_uci());
     } else {
         send(format!("bestmove 0000"));
+        info!("sent [bestmove 0000] to harness")
     }
 }
 
@@ -110,6 +114,7 @@ fn handle_position(pos: &mut Position, line: &str) {
         "startpos" => {
             *pos = Position::new();
             handle_moves(pos, commands);
+            info!("pos after the moves {pos:#?}");
         }
         "fen" => {
             let Some(fen_str) = commands.next() else {
