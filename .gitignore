@@ -6,5 +6,6 @@
 /bench/stockfish
 /bench/fastchess
 /bench/ordo-linux64
+/bench/ordo
 /bench/config.json
 /bench/config.toml

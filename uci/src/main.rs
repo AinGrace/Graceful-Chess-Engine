@@ -1,8 +1,10 @@
 use std::{
+    env::current_dir,
     fmt::Display,
     fs::OpenOptions,
     io::{self, BufRead, Write, stdin},
     mem,
+    path::Path,
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
@@ -21,13 +23,7 @@ static ENGINE_NAME: &str = "Graceful";
 static AUTHOR: &str = "AinGrace";
 
 fn main() {
-    let file = OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open("/home/aingrace/Graceful-Engine/bench/results/engine.log")
-        .unwrap();
-
-    fmt().with_writer(file).init();
+    init_log();
 
     let stdin = stdin();
     let mut stop_flag = Arc::new(AtomicBool::new(false));
@@ -91,6 +87,29 @@ fn main() {
     }
 }
 
+fn init_log() {
+    let log_dir = option_env!("LOG_DIR");
+    let engine_meta = option_env!("ENGINE_META");
+
+    let current_dir = current_dir()
+        .expect("unable to get current directory")
+        .to_string_lossy()
+        .into_owned();
+
+    let log_dir = log_dir.unwrap_or(&current_dir);
+    let log_filename = format!("{}.log", engine_meta.unwrap_or("engine"));
+
+    let log_path = Path::new(log_dir).join(log_filename);
+
+    let file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&log_path)
+        .expect(&format!("unable to open log file at {log_path:?}"));
+
+    fmt().with_writer(file).init();
+}
+
 fn handle_go(pos: &mut Position, line: &str, stop_flag: &Arc<AtomicBool>) {
     let mut commands = line.split_whitespace();
 
@@ -113,7 +132,7 @@ fn handle_go(pos: &mut Position, line: &str, stop_flag: &Arc<AtomicBool>) {
         let before_search = Instant::now();
         let (score, maybe_best_move) = search::negamax(&mut pos, 4, &stop_flag);
         let duration = Instant::now().duration_since(before_search);
-        info!("search finished in: {}", duration.as_micros());
+        info!("search finished in: {} micros", duration.as_micros());
 
         if let Some(best_move) = maybe_best_move {
             send_slice([

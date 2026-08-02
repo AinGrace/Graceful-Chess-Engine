@@ -1,4 +1,5 @@
 use std::{
+    collections::HashMap,
     fmt, fs, io,
     path::{Path, PathBuf},
     process::{Command, ExitStatus, Stdio, abort, exit},
@@ -228,11 +229,23 @@ impl App {
         Ok(())
     }
 
-    fn build_engine(&self, workspace: &Workspace, revision: &str) -> Result<PathBuf> {
+    fn build_engine(
+        &self,
+        workspace: &Workspace,
+        revision: &str,
+        result_dir: &Path,
+    ) -> Result<PathBuf> {
         println!("\n==> Building `{revision}`");
 
         let mut command = Command::new("cargo");
 
+        let result_dir_str = result_dir.to_string_lossy().into_owned();
+
+        let mut envs = HashMap::new();
+        envs.insert("ENGINE_META", revision);
+        envs.insert("LOG_DIR", &result_dir_str);
+
+        command.envs(envs);
         command
             .current_dir(&workspace.path)
             .args(["build", "-q", "--release"]);
@@ -298,17 +311,15 @@ impl App {
         new_workspace: &Workspace,
         base_workspace: &Workspace,
     ) -> Result<()> {
-        let new_engine = self.build_engine(new_workspace, new_revision)?;
-
-        let base_engine = self.build_engine(base_workspace, base_revision)?;
-
         let timestamp = Local::now().format("%Y%m%d-%H%M%S");
-
         let result_dir = self.results_dir.join(format!(
             "sprt-{}-vs-{}-{timestamp}",
             sanitize_name(base_revision),
             sanitize_name(new_revision),
         ));
+
+        let new_engine = self.build_engine(new_workspace, new_revision, &result_dir)?;
+        let base_engine = self.build_engine(base_workspace, base_revision, &result_dir)?;
 
         fs::create_dir_all(&result_dir)?;
 
@@ -389,14 +400,14 @@ impl App {
     }
 
     fn run_gauntlet_inner(&self, revision: &str, workspace: &Workspace) -> Result<()> {
-        let engine = self.build_engine(workspace, revision)?;
-
         let timestamp = Local::now().format("%Y%m%d-%H%M%S");
 
         let result_dir = self.results_dir.join(format!(
             "gauntlet-{revision}-{timestamp}",
             revision = sanitize_name(revision),
         ));
+
+        let engine = self.build_engine(workspace, revision, &result_dir)?;
 
         fs::create_dir_all(&result_dir)?;
 
@@ -474,6 +485,8 @@ impl App {
             format!("option.Threads={}", self.config.test.threads),
             format!("option.Hash={}", self.config.test.hash_mb),
         ]);
+
+        args.extend(["-log".into(), "level=err".into()]);
 
         if !self.config.test.opening_book.is_empty() {
             let book = resolve_path(&self.benchmark_dir, &self.config.test.opening_book);
