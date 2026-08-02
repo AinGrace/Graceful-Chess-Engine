@@ -128,15 +128,17 @@ impl Move {
 
     pub fn role(&self) -> Role {
         match self {
-            Move::Standard {
-                role,
-                from,
-                to,
-                capture,
-                promotion,
-            } => *role,
-            Move::EnPassant { from, to } => Pawn,
-            Move::Castling { king, rook } => Role::King,
+            Move::Standard { role, .. } => *role,
+            Move::EnPassant { .. } => Pawn,
+            Move::Castling { .. } => Role::King,
+        }
+    }
+
+    pub fn captured_role(&self) -> Option<Role> {
+        match self {
+            Move::Standard { capture, .. } => *capture,
+            Move::EnPassant { .. } => Some(Pawn),
+            Move::Castling { .. } => None,
         }
     }
 

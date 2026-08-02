@@ -134,7 +134,7 @@ fn handle_go(pos: &mut Position, line: &str, stop_flag: &Arc<AtomicBool>) {
         info!("starting search");
         let before_search = Instant::now();
         let (score, maybe_best_move) =
-            search::negamax(&mut pos, 4, Score::Mate(-1), Score::Mate(1), &stop_flag);
+            search::negamax(&mut pos, 6, Score::Mate(-1), Score::Mate(1), &stop_flag);
         let duration = Instant::now().duration_since(before_search);
         info!("search finished in: {} micros", duration.as_micros());
 

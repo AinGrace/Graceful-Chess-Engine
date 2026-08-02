@@ -1,6 +1,8 @@
 /target
 .zed/debug.json
 
+/engine.log
+/pivot_fen.txt
 /bench/results
 /bench/results/*
 /bench/stockfish

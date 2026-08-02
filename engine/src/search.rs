@@ -6,7 +6,10 @@ use std::sync::{
 use position::position::Position;
 use types::chess_move::Move;
 
-use crate::eval::{self, Score};
+use crate::{
+    eval::{self, Score},
+    mvv_lva,
+};
 
 /// TODO: add alpha-beta pruning
 pub fn negamax(
@@ -25,8 +28,13 @@ pub fn negamax(
     let mut best_score = Score::Mate(0);
     let mut best_move = None;
 
-    for mv in moves {
-        let undo = pos.do_move_inner(mv);
+    let mut scored_moves = mvv_lva::score_moves(moves);
+
+    for i in 0..scored_moves.len() {
+        mvv_lva::bubble_high_scored_move(&mut scored_moves, i);
+        let current_move = scored_moves[i].0;
+
+        let undo = pos.do_move_inner(current_move);
 
         let (child_score, _) = negamax(pos, depth - 1, -beta, -alpha, stop_flag);
 
@@ -36,7 +44,7 @@ pub fn negamax(
 
         if score > best_score {
             best_score = score;
-            best_move = Some(mv);
+            best_move = Some(current_move);
         }
 
         if score > beta {

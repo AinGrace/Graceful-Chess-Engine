@@ -1,19 +1,20 @@
-use crate::{
-    color::Color,
-    piece::Piece,
-};
+use crate::{color::Color, piece::Piece};
 
+#[rustfmt::skip]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[repr(u8)]
 pub enum Role {
-    Pawn,
-    Knight,
-    Bishop,
-    Rook,
-    Queen,
-    King,
+    Pawn   = 0,
+    Knight = 1,
+    Bishop = 2,
+    Rook   = 3,
+    Queen  = 4,
+    King   = 5,
 }
 
 impl Role {
+    pub const VARIANTS: usize = 6;
+
     pub fn from_char(chr: char) -> Option<Self> {
         match chr {
             'p' | 'P' => Some(Self::Pawn),
@@ -35,6 +36,14 @@ impl Role {
             Role::Queen => 'q',
             Role::King => 'k',
         }
+    }
+
+    pub fn as_u32(self) -> u32 {
+        self as u32
+    }
+
+    pub fn as_usize(self) -> usize {
+        self as usize
     }
 
     pub fn to_piece(self, color: Color) -> Piece {
