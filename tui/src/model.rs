@@ -1,13 +1,14 @@
 use std::{
     collections::VecDeque,
+    sync::{Arc, atomic::AtomicBool},
     time::{Duration, Instant},
 };
 
+use engine::eval::Score;
 use engine::{
     eval,
     search::{self},
 };
-use engine::eval::Score;
 use position::{
     fen::Fen,
     position::{Position, Undo},
@@ -65,7 +66,11 @@ impl EngineState {
         let legal_moves = pos.legal_moves();
 
         let before_search = Instant::now();
-        let (best_move_score, best_move) = search::negamax(&mut pos, DEFAULT_SEARCH_DEPTH);
+        let (best_move_score, best_move) = search::negamax(
+            &mut pos,
+            DEFAULT_SEARCH_DEPTH,
+            &Arc::new(AtomicBool::new(false)),
+        );
         let after_search = Instant::now();
 
         let static_evaluation_score = eval::static_eval(&pos);
@@ -321,7 +326,11 @@ impl Model {
         let search_depth = self.engine.search_depth;
 
         let time_begin = Instant::now();
-        let search_res = search::negamax(&mut self.position_mut(), search_depth);
+        let search_res = search::negamax(
+            &mut self.position_mut(),
+            search_depth,
+            &Arc::new(AtomicBool::new(false)),
+        );
         let time_end = Instant::now();
 
         self.engine.best_move_score = search_res.0;
@@ -422,8 +431,11 @@ impl Model {
                         self.engine.undo.clear();
 
                         let time_begin = Instant::now();
-                        let (best_move_score, best_move) =
-                            search::negamax(&mut self.engine.pos, DEFAULT_SEARCH_DEPTH);
+                        let (best_move_score, best_move) = search::negamax(
+                            &mut self.engine.pos,
+                            DEFAULT_SEARCH_DEPTH,
+                            &Arc::new(AtomicBool::new(false)),
+                        );
                         let time_end = Instant::now();
 
                         self.engine.search_time = time_end.duration_since(time_begin);

@@ -1,10 +1,19 @@
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+};
+
 use position::position::Position;
 use types::chess_move::Move;
 
-use crate::eval::{self, Score, constants::NEG_INF};
+use crate::eval::{self, Score};
 
 /// TODO: add alpha-beta pruning
-pub fn negamax(pos: &mut Position, depth: u8) -> (Score, Option<Move>) {
+pub fn negamax(
+    pos: &mut Position,
+    depth: u8,
+    stop_flag: &Arc<AtomicBool>,
+) -> (Score, Option<Move>) {
     let moves = pos.legal_moves();
 
     if depth == 0 {
@@ -17,7 +26,7 @@ pub fn negamax(pos: &mut Position, depth: u8) -> (Score, Option<Move>) {
     for mv in moves {
         let undo = pos.do_move_inner(mv);
 
-        let (child_score, _) = negamax(pos, depth - 1);
+        let (child_score, _) = negamax(pos, depth - 1, stop_flag);
 
         pos.undo_move(undo);
 
@@ -26,6 +35,10 @@ pub fn negamax(pos: &mut Position, depth: u8) -> (Score, Option<Move>) {
         if score > best_score {
             best_score = score;
             best_move = Some(mv);
+        }
+
+        if stop_flag.load(Ordering::Relaxed) {
+            return (best_score, best_move);
         }
     }
 
@@ -39,28 +52,4 @@ mod tests {
     use position::fen::Fen;
 
     use super::*;
-
-    #[test]
-    fn negamax_test() {
-        let mut pos = Position::new();
-
-        pos.uci_move_checked("d2d4");
-        pos.uci_move_checked("d7d5");
-        pos.uci_move_checked("g1f3");
-        pos.uci_move_checked("b8c6");
-
-        let x = negamax(&mut pos, 5);
-
-        dbg!(x);
-    }
-
-    #[test]
-    fn negamax_sus_fen() {
-        let raw_fen = "8/4P3/8/1k1K4/6P1/P1Q1B3/8/8 b - - 0 74";
-        let fen = Fen::from_str(raw_fen).unwrap();
-        let mut pos = fen.into_position().unwrap();
-
-        let a = negamax(&mut pos, 4);
-        println!("negamax result -> {a:#?}");
-    }
 }

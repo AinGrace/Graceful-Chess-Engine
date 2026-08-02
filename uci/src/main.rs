@@ -1,11 +1,19 @@
 use std::{
+    fmt::Display,
     fs::OpenOptions,
     io::{self, BufRead, Write, stdin},
     mem,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+    thread,
+    time::Instant,
 };
 
 use engine::{eval, search};
 use position::{fen::Fen, position::Position};
+use std::format as fmt;
 use tracing::info;
 use tracing_subscriber::fmt;
 
@@ -22,6 +30,7 @@ fn main() {
     fmt().with_writer(file).init();
 
     let stdin = stdin();
+    let mut stop_flag = Arc::new(AtomicBool::new(false));
     let mut pos = Position::new();
 
     for line in stdin.lock().lines() {
@@ -29,22 +38,24 @@ fn main() {
             "encountered invalid UTF-8 or something else while trying to parse stdin for uci",
         );
 
-        info!("engine got command -> {line}");
+        info!("received: {line}");
 
         match line.as_str() {
             "uci" => {
-                send(format!("id name {ENGINE_NAME}"));
-                send(format!("id author {AUTHOR}"));
-                send(format!("uciok"));
+                send_slice([
+                    fmt!("id name {ENGINE_NAME}"),
+                    fmt!("id author {AUTHOR}"),
+                    fmt!("uciok"),
+                ]);
             }
 
             "isready" => {
-                send(format!("readyok"));
-                info!("sent [readyok] to harness")
+                send(fmt!("readyok"));
             }
 
             "ucinewgame" => {
                 pos = Position::new();
+                stop_flag = Arc::new(AtomicBool::new(false));
             }
 
             "quit" => {
@@ -52,13 +63,19 @@ fn main() {
             }
 
             "eval" => {
-                send(format!("{}", eval::static_eval(&pos)));
+                send(fmt!("{}", eval::static_eval(&pos)));
             }
 
             "d" => {
-                send(format!("{:#?}", pos));
-                send(format!("{}", pos.into_fen().to_string()));
-                send(format!("legal moves: {:?}", pos.legal_moves()));
+                send_slice([
+                    fmt!("{:#?}", pos),
+                    fmt!("{}", pos.into_fen().to_string()),
+                    fmt!("legal moves: {:?}", pos.legal_moves()),
+                ]);
+            }
+
+            "stop" => {
+                stop_flag.swap(true, Ordering::Relaxed);
             }
 
             _ => {
@@ -67,14 +84,14 @@ fn main() {
                 }
 
                 if line.starts_with("go") {
-                    handle_go(&mut pos, &line);
+                    handle_go(&mut pos, &line, &stop_flag);
                 }
             }
         }
     }
 }
 
-fn handle_go(pos: &mut Position, line: &str) {
+fn handle_go(pos: &mut Position, line: &str, stop_flag: &Arc<AtomicBool>) {
     let mut commands = line.split_whitespace();
 
     let _ = commands.nth(0);
@@ -88,18 +105,27 @@ fn handle_go(pos: &mut Position, line: &str) {
         }
     }
 
-    info!("starting search");
-    let (_score, maybe_best_move) = search::negamax(pos, 4);
-    info!("search finished");
+    let mut pos = pos.clone();
+    let stop_flag = Arc::clone(stop_flag);
 
-    if let Some(best_move) = maybe_best_move {
-        send(format!("info score cp {_score}"));
-        send(format!("bestmove {}", best_move.to_uci()));
-        info!("sent [bestmove {}] to harness", best_move.to_uci());
-    } else {
-        send(format!("bestmove 0000"));
-        info!("sent [bestmove 0000] to harness")
-    }
+    thread::spawn(move || {
+        info!("starting search");
+        let before_search = Instant::now();
+        let (score, maybe_best_move) = search::negamax(&mut pos, 4, &stop_flag);
+        let duration = Instant::now().duration_since(before_search);
+        info!("search finished in: {}", duration.as_micros());
+
+        if let Some(best_move) = maybe_best_move {
+            send_slice([
+                fmt!("info {score}"),
+                fmt!("bestmove {}", best_move.to_uci()),
+            ]);
+        } else {
+            send(fmt!("bestmove 0000"));
+        }
+
+        stop_flag.swap(false, Ordering::Relaxed);
+    });
 }
 
 fn handle_position(pos: &mut Position, line: &str) {
@@ -150,7 +176,20 @@ fn handle_moves(pos: &mut Position, mut commands: std::str::SplitWhitespace<'_>)
     }
 }
 
-fn send(s: String) {
+fn send(s: impl Display) {
     println!("{s}");
-    io::stdout().flush().expect("can't flush to stdout")
+    io::stdout().flush().expect("can't flush to stdout");
+    info!("sent [{s}]")
+}
+
+fn send_slice<T, K>(items: T)
+where
+    T: IntoIterator<Item = K>,
+    K: Display,
+{
+    for item in items {
+        println!("{item}");
+        io::stdout().flush().expect("can't flush to stdout");
+        info!("sent [{item}]")
+    }
 }

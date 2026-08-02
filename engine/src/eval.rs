@@ -166,9 +166,9 @@ impl Display for Score {
             f,
             "{}",
             match self {
-                Score::Centipawn(val) => format!("{}", val),
-                Score::Mate(val) => format!("MATE IN {}", val),
-                Score::Draw => format!("DRAW"),
+                Score::Centipawn(val) => format!("score cp {}", val),
+                Score::Mate(val) => format!("score mate {}", val),
+                Score::Draw => format!("score cp 0"),
             }
         )
     }
