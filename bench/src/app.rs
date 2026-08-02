@@ -372,7 +372,7 @@ impl App {
             format!("alpha={}", self.config.sprt.alpha),
             format!("beta={}", self.config.sprt.beta),
             "-pgnout".into(),
-            pgn.display().to_string(),
+            format!("file={}", pgn.display().to_string()),
         ]);
 
         self.run_fastchess(&args, &log)?;

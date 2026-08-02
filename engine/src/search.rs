@@ -12,6 +12,8 @@ use crate::eval::{self, Score};
 pub fn negamax(
     pos: &mut Position,
     depth: u8,
+    mut alpha: Score,
+    beta: Score,
     stop_flag: &Arc<AtomicBool>,
 ) -> (Score, Option<Move>) {
     let moves = pos.legal_moves();
@@ -26,7 +28,7 @@ pub fn negamax(
     for mv in moves {
         let undo = pos.do_move_inner(mv);
 
-        let (child_score, _) = negamax(pos, depth - 1, stop_flag);
+        let (child_score, _) = negamax(pos, depth - 1, -beta, -alpha, stop_flag);
 
         pos.undo_move(undo);
 
@@ -36,6 +38,12 @@ pub fn negamax(
             best_score = score;
             best_move = Some(mv);
         }
+
+        if score > beta {
+            break;
+        }
+
+        alpha = alpha.max(score);
 
         if stop_flag.load(Ordering::Relaxed) {
             return (best_score, best_move);

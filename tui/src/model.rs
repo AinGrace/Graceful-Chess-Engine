@@ -69,6 +69,8 @@ impl EngineState {
         let (best_move_score, best_move) = search::negamax(
             &mut pos,
             DEFAULT_SEARCH_DEPTH,
+            Score::Mate(-1),
+            Score::Mate(1),
             &Arc::new(AtomicBool::new(false)),
         );
         let after_search = Instant::now();
@@ -329,6 +331,8 @@ impl Model {
         let search_res = search::negamax(
             &mut self.position_mut(),
             search_depth,
+            Score::Mate(-1),
+            Score::Mate(1),
             &Arc::new(AtomicBool::new(false)),
         );
         let time_end = Instant::now();
@@ -434,6 +438,8 @@ impl Model {
                         let (best_move_score, best_move) = search::negamax(
                             &mut self.engine.pos,
                             DEFAULT_SEARCH_DEPTH,
+                            Score::Mate(-1),
+                            Score::Mate(1),
                             &Arc::new(AtomicBool::new(false)),
                         );
                         let time_end = Instant::now();
