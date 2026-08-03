@@ -1,17 +1,13 @@
-use std::{
-    io::{self, Write, stdout},
-    thread,
-};
+use std::io::stdout;
 
 use arboard::Clipboard;
-use color_eyre::eyre::{Ok, Result, bail};
+use color_eyre::eyre::{Ok, bail};
 use ratatui::{
     DefaultTerminal,
-    crossterm::{self, ExecutableCommand, event, execute},
-    macros::ratatui_core::terminal,
+    crossterm::{ExecutableCommand, event},
 };
 
-use crate::{model::Model, ui::global_render, update::handle_event};
+use crate::model::Model;
 
 /// Model
 mod model;
@@ -21,6 +17,8 @@ mod ui;
 
 /// Update
 mod update;
+
+// TODO: add tracing and output logs to specific log file, remove the logs window from tui and replace with keybinds cheatsheet
 
 fn main() -> color_eyre::Result<()> {
     color_eyre::install()?;

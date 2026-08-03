@@ -38,14 +38,14 @@ pub fn update(model: &mut Model, msg: Message) {
         Message::Quit => model.quit(),
         Message::SearchIncrement => model.set_search_depth(model.search_depth().saturating_add(1)),
         Message::SearchDecrement => model.set_search_depth(model.search_depth().saturating_sub(1)),
-        Message::Search => model.update_best_move(),
+        Message::Search => model.init_search(),
         Message::MouseScrollDown { col, row } => {
             model.set_scrolling(Scrolling::Down { col, row });
         }
         Message::MouseScrollUp { col, row } => {
             model.set_scrolling(Scrolling::Up { col, row });
         }
-        Message::MouseMove { col, row } => {}
+        Message::MouseMove { .. } => {}
         Message::ChangeFocus => model.change_focus(),
         Message::CopyFenToClipboard => model.copy_fen_to_clipboard(),
     }

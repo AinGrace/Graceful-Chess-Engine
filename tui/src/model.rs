@@ -1,14 +1,15 @@
 use std::{
     collections::VecDeque,
-    sync::{Arc, atomic::AtomicBool},
+    sync::{Arc, Mutex, atomic::AtomicBool},
     time::{Duration, Instant},
 };
 
-use engine::eval::Score;
 use engine::{
     eval,
-    search::{self},
+    search::{self, SearchResult, TTOptions},
+    tt::TT,
 };
+use engine::{eval::Score, search::SearchOptions};
 use position::{
     fen::Fen,
     position::{Position, Undo},
@@ -46,9 +47,11 @@ pub enum FocusMode {
     FenInput,
 }
 
-pub struct EngineState {
+pub struct EngineModel {
     pos: Position,
     legal_moves: MoveList,
+
+    tt: Arc<Mutex<TT>>,
 
     best_move: Option<Move>,
     best_move_score: Score,
@@ -60,42 +63,116 @@ pub struct EngineState {
     search_depth: u8,
 }
 
-impl EngineState {
+impl EngineModel {
     pub fn new() -> Self {
-        let mut pos = Position::new();
+        let pos = Position::new();
         let legal_moves = pos.legal_moves();
 
-        let before_search = Instant::now();
-        let (best_move_score, best_move) = search::negamax(
-            &mut pos,
-            DEFAULT_SEARCH_DEPTH,
-            Score::Mate(-1),
-            Score::Mate(1),
-            &Arc::new(AtomicBool::new(false)),
-        );
-        let after_search = Instant::now();
-
+        let tt = TT::new(TT::DEFAULT_SIZE_MB);
+        let wrapped_tt = Arc::new(Mutex::new(tt));
         let static_evaluation_score = eval::static_eval(&pos);
-
         let undo = Vec::with_capacity(128);
-        let search_time = after_search.duration_since(before_search);
         let search_depth = DEFAULT_SEARCH_DEPTH;
 
-        Self {
+        let mut res = Self {
             pos,
             legal_moves,
-            best_move,
-            best_move_score,
+            tt: wrapped_tt,
+            best_move: None,
+            best_move_score: Score::Centipawn(0),
             static_evaluation_score,
             undo,
-            search_time,
+            search_time: Duration::from_nanos(0),
             search_depth,
-        }
+        };
+
+        let tt_opts = TTOptions::Enabled(Arc::clone(&res.tt));
+
+        let search_opts = SearchOptions {
+            pos: &mut res.pos,
+            search_depth: Some(6),
+            tt: tt_opts,
+            // FIXME: ui thread
+            stop_flag: &Arc::new(AtomicBool::new(false)),
+        };
+
+        let before_search = Instant::now();
+        let SearchResult { score, best_move } = search::search(search_opts);
+        let after_search = Instant::now();
+
+        let search_time = after_search.duration_since(before_search);
+        res.search_time = search_time;
+        res.best_move = best_move;
+        res.best_move_score = score;
+
+        res
+    }
+
+    pub fn make_move(&mut self, raw_uci: &str) -> Option<Move> {
+        let Some(mv) = self
+            .legal_moves
+            .iter()
+            .find(|mv| mv.to_uci() == raw_uci)
+            .and_then(|mv| Some(*mv))
+        else {
+            return None;
+        };
+
+        let undo = self.pos.do_move_inner(mv);
+        self.undo.push(undo);
+
+        self.legal_moves = self.pos.legal_moves();
+
+        self.init_search();
+
+        Some(mv)
+    }
+
+    pub fn undo_move(&mut self) -> bool {
+        let Some(undo) = self.undo.pop() else {
+            return false;
+        };
+
+        self.pos.undo_move(undo);
+        self.legal_moves = self.pos.legal_moves();
+        self.init_search();
+
+        true
+    }
+
+    pub fn apply_fen(&mut self, new_pos: Position) {
+        self.pos = new_pos;
+        self.legal_moves = self.pos.legal_moves();
+        self.undo.clear();
+        self.search_depth = DEFAULT_SEARCH_DEPTH;
+
+        self.init_search();
+    }
+
+    fn init_search(&mut self) {
+        let search_depth = self.search_depth;
+
+        let tt_opts = TTOptions::Enabled(Arc::clone(&self.tt));
+
+        let search_opts = SearchOptions {
+            pos: &mut self.pos,
+            search_depth: search_depth.into(),
+            tt: tt_opts,
+            // FIXME: ui thread
+            stop_flag: &Arc::new(AtomicBool::new(false)),
+        };
+        let time_begin = Instant::now();
+        let SearchResult { score, best_move } = search::search(search_opts);
+        let time_end = Instant::now();
+
+        self.best_move_score = score;
+        self.best_move = best_move;
+        self.search_time = time_end.duration_since(time_begin);
     }
 }
 
 pub struct Model {
-    engine: EngineState,
+    engine: EngineModel,
     partial_move: Vec<char>,
     partial_fen: Vec<char>,
     move_history: Vec<Move>,
@@ -108,7 +185,7 @@ pub struct Model {
 
 impl Model {
     pub fn new() -> Self {
-        let engine = EngineState::new();
+        let engine = EngineModel::new();
         let partial_move = Vec::with_capacity(5);
         let partial_fen = Vec::with_capacity(20);
         let move_history = Vec::with_capacity(128);
@@ -282,65 +359,38 @@ impl Model {
     }
 
     pub fn make_move(&mut self, raw_uci: &str) {
-        let Some(mv) = self
-            .legal_moves()
-            .iter()
-            .find(|mv| mv.to_uci() == raw_uci)
-            .and_then(|mv| Some(*mv))
-        else {
+        let Some(applied_move) = self.engine.make_move(raw_uci) else {
             return;
         };
 
-        let undo = self.position_mut().do_move_inner(mv);
-
-        self.move_history.push(mv);
-        self.engine.legal_moves = self.position().legal_moves();
-        self.engine.undo.push(undo);
+        self.move_history.push(applied_move);
         self.partial_move.clear();
 
-        self.update_best_move();
         self.info_log(format!("applied move [{raw_uci}]"));
     }
 
     pub fn undo_move(&mut self) {
-        if let Some(undo) = self.engine.undo.pop() {
-            self.position_mut().undo_move(undo);
-            self.engine.legal_moves = self.position().legal_moves();
-
-            let unmade_move = self
-                .move_history
-                .pop()
-                .expect("move history is not empty")
-                .to_uci();
-
-            self.update_best_move();
-            self.info_log(format!("reversed the move {unmade_move}"));
+        if !self.engine.undo_move() {
+            return;
         }
+
+        let unmade_move = self
+            .move_history
+            .pop()
+            .expect("move history is not empty")
+            .to_uci();
+
+        self.info_log(format!("reversed the move {unmade_move}"));
+    }
+
+    pub fn init_search(&mut self) {
+        self.engine.init_search();
     }
 
     pub fn play_best_move(&mut self) {
         if let Some(best_move) = self.engine.best_move.map(|mv| mv.to_uci()).take() {
             self.make_move(&best_move);
         }
-    }
-
-    pub fn update_best_move(&mut self) {
-        let search_depth = self.engine.search_depth;
-
-        let time_begin = Instant::now();
-        let search_res = search::negamax(
-            &mut self.position_mut(),
-            search_depth,
-            Score::Mate(-1),
-            Score::Mate(1),
-            &Arc::new(AtomicBool::new(false)),
-        );
-        let time_end = Instant::now();
-
-        self.engine.best_move_score = search_res.0;
-        self.engine.best_move = search_res.1;
-
-        self.engine.search_time = time_end.duration_since(time_begin)
     }
 
     pub fn quit(&mut self) {
@@ -423,38 +473,18 @@ impl Model {
         let maybe_fen = Fen::new(&raw_fen);
 
         match maybe_fen {
-            Ok(fen_struct) => {
-                let maybe_pos = fen_struct.into_position();
-                match maybe_pos {
-                    Ok(pos) => {
-                        self.engine.pos = pos;
-                        self.engine.legal_moves = self.engine.pos.legal_moves();
-                        self.partial_move.clear();
-                        self.partial_fen.clear();
-                        self.move_history.clear();
-                        self.engine.undo.clear();
-
-                        let time_begin = Instant::now();
-                        let (best_move_score, best_move) = search::negamax(
-                            &mut self.engine.pos,
-                            DEFAULT_SEARCH_DEPTH,
-                            Score::Mate(-1),
-                            Score::Mate(1),
-                            &Arc::new(AtomicBool::new(false)),
-                        );
-                        let time_end = Instant::now();
-
-                        self.engine.search_time = time_end.duration_since(time_begin);
-                        self.engine.search_depth = 4;
-                        self.engine.best_move = best_move;
-                        self.engine.best_move_score = best_move_score;
-                    }
-                    Err(e) => {
-                        self.info_log(e.to_string());
-                    }
-                }
-            }
             Err(e) => self.info_log(e.to_string()),
+            Ok(fen_struct) => match fen_struct.try_into_position() {
+                Ok(pos) => {
+                    self.engine.apply_fen(pos);
+                    self.partial_move.clear();
+                    self.partial_fen.clear();
+                    self.move_history.clear();
+                }
+                Err(e) => {
+                    self.info_log(e.to_string());
+                }
+            },
         }
     }
 }

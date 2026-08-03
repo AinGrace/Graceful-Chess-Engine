@@ -1,8 +1,8 @@
 use std::{
     collections::HashMap,
-    fmt, fs, io,
+    fs, io,
     path::{Path, PathBuf},
-    process::{Command, ExitStatus, Stdio, abort, exit},
+    process::{Command, ExitStatus, Stdio, exit},
 };
 
 use anyhow::{Context, Result, bail};

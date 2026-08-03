@@ -2,6 +2,7 @@
 .zed/debug.json
 
 /engine.log
+/*.log
 /pivot_fen.txt
 /bench/results
 /bench/results/*
