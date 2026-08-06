@@ -20,7 +20,6 @@ pub enum GameResult {
 }
 
 impl GameResult {
-    
     fn new_winner(side: Color) -> Self {
         match side {
             Color::White => Self::White,
@@ -225,9 +224,9 @@ impl Position {
     }
 
     pub fn uci_move_checked(&mut self, raw_uci: &str) -> Undo {
-        let uci_move = self.parse_uci(raw_uci).unwrap_or_else(|| panic!(
-            "caller quarantees the validity of raw_uci {raw_uci}"
-        ));
+        let uci_move = self
+            .parse_uci(raw_uci)
+            .unwrap_or_else(|| panic!("caller quarantees the validity of raw_uci {raw_uci}"));
 
         self.do_move_inner(uci_move)
     }
@@ -995,14 +994,5 @@ mod tests {
         }
 
         assert_eq!(board, before)
-    }
-
-    #[test]
-    fn test_particular_fen() {
-        let raw_fen = "rnbqkbnr/pp1ppppp/8/2p5/4P3/8/PPPP1PPP/RNBQKBNR w KQkq c6 0 2";
-        let maybe_fen = Fen::new(raw_fen).unwrap(); 
-        println!("{maybe_fen}");
-
-        let pos = maybe_fen.into_position().unwrap();
     }
 }

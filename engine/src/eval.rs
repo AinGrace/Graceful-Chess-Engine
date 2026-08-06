@@ -11,8 +11,6 @@ use crate::eval::constants::{
 #[rustfmt::skip]
 pub(crate) mod constants {
 
-    pub const NEG_INF: i32 = -1_000_000;
-
     /// assign 100 as default pawn value instead of 1 in order to avoid floating point calculations
     pub const PAWN_VALUE    :   u32 = 100;
     pub const KNIGHT_VALUE  :   u32 = 340;
@@ -115,6 +113,7 @@ pub enum Score {
     Centipawn(i32),
     Mate(i16),
     Draw,
+    Stopped,
 }
 
 impl Score {
@@ -124,6 +123,7 @@ impl Score {
             Score::Mate(val) => -100_000 - val as i32,
             Score::Centipawn(val) => val,
             Score::Draw => 0,
+            Score::Stopped => 0,
         }
     }
 
@@ -156,6 +156,7 @@ impl Neg for Score {
             Score::Centipawn(val) => Score::Centipawn(-val),
             Score::Mate(val) => Score::Mate(-val),
             Score::Draw => Score::Draw,
+            Score::Stopped => Score::Stopped,
         }
     }
 }
@@ -166,11 +167,18 @@ impl Display for Score {
             f,
             "{}",
             match self {
-                Score::Centipawn(val) => format!("{}", val),
-                Score::Mate(val) => format!("MATE IN {}", val),
-                Score::Draw => format!("DRAW"),
+                Score::Centipawn(val) => format!("score cp {}", val),
+                Score::Mate(val) => format!("score mate {}", val),
+                Score::Draw => format!("score cp 0"),
+                Score::Stopped => format!("STOPPED"),
             }
         )
+    }
+}
+
+impl Default for Score {
+    fn default() -> Self {
+        Self::Mate(-1)
     }
 }
 

@@ -1,124 +1,39 @@
-use std::{
-    io::{BufRead, stdin},
-    mem,
-};
+use std::{env::current_dir, fs::OpenOptions, path::Path};
 
-use engine::{eval, search};
-use position::{fen::Fen, position::Position};
+use tracing_subscriber::fmt;
 
-static ENGINE_NAME: &str = "Graceful";
-static AUTHOR: &str = "AinGrace";
+use crate::uci::Uci;
+
+mod uci;
+mod uci_command;
+mod uci_io;
 
 fn main() {
-    let stdin = stdin();
-    let mut pos = Position::new();
+    init_log();
 
-    for line in stdin.lock().lines() {
-        let line = line.expect(
-            "encountered invalid UTF-8 or something else while trying to parse stdin for uci",
-        );
-
-        match line.as_str() {
-            "uci" => {
-                println!("id name {ENGINE_NAME}");
-                println!("id author {AUTHOR}");
-                println!("uciok");
-            }
-
-            "isready" => {
-                println!("readyok");
-            }
-
-            "ucinewgame" => {
-                pos = Position::new();
-            }
-
-            "quit" => {
-                break;
-            }
-
-            "eval" => {
-                println!("{}", eval::static_eval(&pos));
-            }
-
-            _ => {
-                if line.starts_with("position") {
-                    handle_position(&mut pos, &line);
-                }
-
-                if line.starts_with("go depth") {
-                    handle_go(&mut pos, &line);
-                }
-            }
-        }
-    }
+    let mut uci = Uci::new_stdio();
+    uci.run();
 }
 
-fn handle_go(pos: &mut Position, line: &str) {
-    let mut commands = line.split_whitespace();
+fn init_log() {
+    let log_dir = option_env!("LOG_DIR");
+    let engine_meta = option_env!("ENGINE_META");
 
-    // drop first two words i.e "go depth"
-    let _ = commands.nth(1);
+    let current_dir = current_dir()
+        .expect("unable to get current directory")
+        .to_string_lossy()
+        .into_owned();
 
-    let Some(raw_depth) = commands.next() else {
-        eprintln!("error trying to get the raw depth");
-        return;
-    };
+    let log_dir = log_dir.unwrap_or(&current_dir);
+    let log_filename = format!("{}.log", engine_meta.unwrap_or("uci"));
 
-    let Ok(depth) = raw_depth.parse() else {
-        eprintln!("error trying to parse the raw depth");
-        return;
-    };
+    let log_path = Path::new(log_dir).join(log_filename);
 
-    let (_score, best_move) = search::negamax(pos, depth);
-    println!(
-        "bestmove {} | score -> {_score}",
-        best_move.unwrap().to_uci()
-    );
-}
+    let file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&log_path)
+        .unwrap_or_else(|_| panic!("unable to open log file at {}", log_path.display()));
 
-fn handle_position(pos: &mut Position, line: &str) {
-    let mut commands = line.split_whitespace();
-
-    // drop first word
-    let _ = commands.next();
-
-    let Some(second_part) = commands.next() else {
-        return;
-    };
-
-    match second_part {
-        "startpos" => {
-            handle_moves(pos, commands);
-        }
-        "fen" => {
-            let Some(fen_str) = commands.next() else {
-                return;
-            };
-
-            let Ok(fen) = Fen::new(fen_str) else { return };
-
-            if let Ok(new_pos) = fen.into_position() {
-                let _old_pos = mem::replace(pos, new_pos);
-            } else {
-                return;
-            }
-
-            handle_moves(pos, commands);
-        }
-
-        _unknown => (),
-    }
-}
-
-fn handle_moves(pos: &mut Position, mut commands: std::str::SplitWhitespace<'_>) {
-    if let Some(moves_cmd) = commands.next()
-        && moves_cmd == "moves"
-    {
-        for raw_uci in commands.into_iter() {
-            let Ok(_undo) = pos.uci_move(raw_uci) else {
-                return;
-            };
-        }
-    }
+    fmt().with_writer(file).init();
 }

@@ -1,2 +1,14 @@
 /target
 .zed/debug.json
+
+/engine.log
+/*.log
+/pivot_fen.txt
+/bench/results
+/bench/results/*
+/bench/stockfish
+/bench/fastchess
+/bench/ordo-linux64
+/bench/ordo
+/bench/config.json
+/bench/config.toml
