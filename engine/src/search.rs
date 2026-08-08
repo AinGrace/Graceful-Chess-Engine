@@ -9,15 +9,43 @@ use types::chess_move::Move;
 use crate::{
     eval::{self, Score},
     mvv_lva,
+    time_control::TimeControl,
     tt::TT,
 };
 
-const MAX_DEPTH: u8 = 128;
+pub const MAX_DEPTH: u8 = 128;
 
 #[derive(Default, Debug)]
 pub struct SearchResult {
     pub score: Score,
     pub best_move: Option<Move>,
+    pub nodes: u64,
+}
+
+impl SearchResult {
+    pub fn new_abort(nodes: u64) -> Self {
+        Self::new(Score::Abort, None, nodes)
+    }
+
+    pub fn new(score: Score, best_move: Option<Move>, nodes: u64) -> Self {
+        Self {
+            score,
+            best_move,
+            nodes,
+        }
+    }
+
+    pub fn is_aborted(&self) -> bool {
+        matches!(self.score, Score::Abort)
+    }
+}
+
+pub struct SearchOptions<'a> {
+    pub pos: &'a mut Position,
+    pub search_depth: Option<u8>,
+    pub tt_opts: TTOptions,
+    pub stop_flag: &'a Arc<AtomicBool>,
+    pub time_control: TimeControl,
 }
 
 pub enum TTOptions {
@@ -25,36 +53,67 @@ pub enum TTOptions {
     Disabled,
 }
 
-pub struct SearchOptions<'a> {
-    pub pos: &'a mut Position,
-    pub search_depth: Option<u8>,
-    pub tt: TTOptions,
-    pub stop_flag: &'a Arc<AtomicBool>,
-}
+pub fn search<F>(
+    SearchOptions {
+        pos,
+        search_depth,
+        tt_opts,
+        stop_flag,
+        time_control,
+    }: SearchOptions,
+    mut f: F,
+) -> SearchResult
+where
+    F: FnMut(&str),
+{
+    let mut result = SearchResult::default();
 
-pub fn search(opts: SearchOptions) -> SearchResult {
-    let mut res = SearchResult::default();
-
-    let pos = opts.pos;
-    let depth = opts.search_depth.unwrap_or(MAX_DEPTH);
-    let tt_opts = opts.tt;
-    let stop_flag = &opts.stop_flag;
+    let depth = search_depth.unwrap_or(MAX_DEPTH);
 
     let alpha = Score::Mate(-1);
     let beta = Score::Mate(1);
 
-    for i in 1..=depth {
-        let (score, best_move) = negamax(pos, i, &tt_opts, alpha, beta, stop_flag);
+    println!("{time_control}");
 
-        if matches!(score, Score::Stopped) {
-            return res;
+    for curr_depth in 1..=depth {
+        if time_control.soft_expired() {
+            return result;
         }
 
-        res.score = score;
-        res.best_move = best_move;
+        let current_result = negamax(
+            pos,
+            curr_depth,
+            &tt_opts,
+            alpha,
+            beta,
+            stop_flag,
+            &time_control,
+            &mut 0,
+        );
+
+        if current_result.is_aborted() {
+            return result;
+        }
+
+        let searched_nodes = current_result.nodes;
+        let nps = searched_nodes as f64 / time_control.elapsed_secs_f64();
+
+        f(&format!(
+            "info depth {curr_depth} {} nodes {} nps {} time {}",
+            current_result.score,
+            searched_nodes,
+            nps.trunc(),
+            time_control.elapsed_from_start().as_millis()
+        ));
+
+        result = current_result;
+
+        if time_control.soft_expired() {
+            return result;
+        }
     }
 
-    res
+    result
 }
 
 fn negamax(
@@ -64,16 +123,25 @@ fn negamax(
     mut alpha: Score,
     beta: Score,
     stop_flag: &Arc<AtomicBool>,
-) -> (Score, Option<Move>) {
+    time_control: &TimeControl,
+    nodes: &mut u64,
+) -> SearchResult {
+    if nodes.trailing_zeros() == 16 {
+        if time_control.hard_expired() {
+            return SearchResult::new_abort(*nodes);
+        }
+    }
+
     if stop_flag.load(Ordering::Relaxed) {
         stop_flag.store(false, Ordering::Relaxed);
-        return (Score::Stopped, None);
+        return SearchResult::new_abort(*nodes);
     }
 
     if depth == 0 {
-        return (eval::static_eval(pos), None);
+        return SearchResult::new(eval::static_eval(pos), None, *nodes);
     }
 
+    // TODO:
     match tt_opts {
         TTOptions::Enabled(tt) => {
             let tt_handle = tt.lock().expect("unable to acquire lock on TT mutex");
@@ -81,7 +149,7 @@ fn negamax(
                 && entry.hash == pos.zobrist_hash()
                 && entry.depth >= depth
             {
-                return (entry.score, entry.best_move);
+                return SearchResult::new(entry.score, entry.best_move, *nodes);
             }
         }
         TTOptions::Disabled => (),
@@ -89,8 +157,7 @@ fn negamax(
 
     let moves = pos.legal_moves();
 
-    let mut best_score = Score::Mate(0);
-    let mut best_move = None;
+    let mut result = SearchResult::new(Score::Mate(0), None, *nodes);
 
     let mut scored_moves = mvv_lva::score_moves(moves);
 
@@ -100,61 +167,46 @@ fn negamax(
 
         let undo = pos.do_move_inner(current_move);
 
-        let (child_score, _) = negamax(pos, depth - 1, tt_opts, -beta, -alpha, stop_flag);
+        *nodes += 1;
+        let search_result = negamax(
+            pos,
+            depth - 1,
+            tt_opts,
+            -beta,
+            -alpha,
+            stop_flag,
+            time_control,
+            nodes,
+        );
 
         pos.undo_move(undo);
 
-        let score = (-child_score).step();
-
-        if score > best_score {
-            best_score = score;
-            best_move = Some(current_move);
+        if matches!(search_result.score, Score::Abort) {
+            return search_result;
         }
 
-        if score > beta {
+        let inverted_score_step = (-search_result.score).step();
+
+        if inverted_score_step > result.score {
+            result.score = inverted_score_step;
+            result.best_move = Some(current_move);
+        }
+
+        if inverted_score_step > beta {
             break;
         }
 
-        alpha = alpha.max(score);
+        alpha = alpha.max(inverted_score_step);
     }
 
     match tt_opts {
         TTOptions::Enabled(tt) => {
-            let mut tt_handle = tt.lock().expect("unable to acquire lock on TT mutex");
-            tt_handle.insert(pos.zobrist_hash(), depth, best_score, best_move);
+            let mut tt_handle = tt.lock().expect("FATAL");
+            tt_handle.insert(pos.zobrist_hash(), depth, result.score, result.best_move);
         }
         TTOptions::Disabled => (),
     }
 
-    (best_score, best_move)
-}
-
-#[cfg(test)]
-mod tests {
-    use std::sync::{Arc, Mutex, atomic::AtomicBool};
-
-    use position::position::Position;
-
-    use crate::{
-        search::{self, SearchOptions, TTOptions},
-        tt::TT,
-    };
-
-    #[test]
-    fn search_standart_pos() {
-        let mut pos = Position::new();
-
-        let tt_opts = TTOptions::Enabled(Arc::new(Mutex::new(TT::new(256))));
-
-        let search_opts = SearchOptions {
-            pos: &mut pos,
-            search_depth: Some(8),
-            tt: tt_opts,
-            stop_flag: &Arc::new(AtomicBool::new(false)),
-        };
-
-        let res = search::search(search_opts);
-
-        println!("{:#?}", res)
-    }
+    result.nodes = *nodes;
+    result
 }

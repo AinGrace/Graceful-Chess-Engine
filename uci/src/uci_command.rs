@@ -1,5 +1,6 @@
+use engine::time_control::TimeControlKind;
 use position::{fen::Fen, position::Position};
-use std::str::FromStr;
+use std::{collections::HashSet, str::FromStr};
 use tracing::info;
 use types::chess_move::Move;
 
@@ -22,18 +23,27 @@ pub enum Command {
 
 #[derive(Debug)]
 pub enum GoCmd {
-    Inf,  // infinite search, until stop command
-    Base, // search up to MAX_DEPTH defined somewhere in the depths of engine
-    Subcommands(Vec<GoSubCmd>),
+    Inf,                     // infinite search, until stop command
+    Base(GoTimeControlKind), // search up to MAX_DEPTH defined somewhere in the depths of engine
+    Depth(u8, GoTimeControlKind),
 }
 
 #[derive(Debug)]
-pub enum GoSubCmd {
-    Depth(u8),
-    Winc(u32),
-    Binc(u32),
-    Wtime(u32),
-    Btime(u32),
+pub enum GoTimeControlKind {
+    Infinite,
+
+    SuddenDeath {
+        w_time: u32,
+        b_time: u32,
+    },
+
+    Increment {
+        w_time: u32,
+        w_inc: u32,
+
+        b_time: u32,
+        b_inc: u32,
+    },
 }
 
 #[derive(Debug)]
@@ -62,6 +72,7 @@ impl FromStr for Command {
             // at this point s == single word
             return match s.trim() {
                 "d"          => Ok(Self::D),
+                "go"         => Ok(Self::Go(GoCmd::Base(GoTimeControlKind::Infinite))),
                 "uci"        => Ok(Self::Uci),
                 "eval"       => Ok(Self::Eval),
                 "stop"       => Ok(Self::Stop),
@@ -91,70 +102,88 @@ impl FromStr for GoCmd {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         if s.is_empty() {
-            return Ok(Self::Base);
+            return Ok(Self::Base(GoTimeControlKind::Infinite));
         }
 
         if s == "infinite" {
             return Ok(Self::Inf);
         }
 
-        let mut res = Vec::new();
         let raw_commands = s.split_ascii_whitespace().collect::<Vec<&str>>();
 
-        if raw_commands.len() == 1 {
-            return Ok(Self::Base); // fallback value
+        // at the current moment longest go command supported by the engine
+        // must have less than 11 elements
+        //
+        // range starts from 2 to filter out
+        // incorrect command "go depth"
+        // with no value for depth specified
+        if !(2..=10).contains(&raw_commands.len()) {
+            return Err(format!("unknown command, here: {s}"));
         }
 
-        for i in (0..raw_commands.len()).step_by(2) {
-            let sub_cmd = raw_commands[i..].join(" ").parse::<GoSubCmd>()?;
-            res.push(sub_cmd);
-        }
+        match raw_commands[0] {
+            "depth" => {
+                let depth = raw_commands[1]
+                    .parse::<u8>()
+                    .map_err(|_err| format!("unknown value for depth"))?;
 
-        Ok(Self::Subcommands(res))
+                let time_control = (&raw_commands[2..])
+                    .join(" ")
+                    .parse::<GoTimeControlKind>()?;
+
+                Ok(Self::Depth(depth, time_control))
+            }
+
+            _ => {
+                let time_control = raw_commands.join(" ").parse::<GoTimeControlKind>()?;
+                Ok(Self::Base(time_control))
+            }
+        }
     }
 }
 
-impl FromStr for GoSubCmd {
+impl FromStr for GoTimeControlKind {
     type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        fn parse_cmd_value_pair<T, F>(
-            raw_cmds: &[&str],
-            raw_cmd: &str,
-            value_idx: usize,
-            f: F,
-        ) -> Result<GoSubCmd, String>
-        where
-            T: FromStr,
-            F: Fn(T) -> GoSubCmd,
-        {
-            let Some(val) = raw_cmds.get(value_idx).map(|v| v.trim()) else {
-                return Err(format!("unknown command: missing value for {raw_cmd}"));
-            };
-
-            val.parse::<T>()
-                .map_or_else(|_| Err(format!("unknown command: {val}")), |val| Ok(f(val)))
-        }
-
         let raw_cmds: Vec<&str> = s.split_ascii_whitespace().collect();
 
-        if let Some(i) = (0..raw_cmds.len()).next() {
-            return match raw_cmds[i] {
-                raw_cmd @ "depth" => parse_cmd_value_pair(&raw_cmds, raw_cmd, i + 1, Self::Depth),
-
-                raw_cmd @ "winc" => parse_cmd_value_pair(&raw_cmds, raw_cmd, i + 1, Self::Winc),
-
-                raw_cmd @ "binc" => parse_cmd_value_pair(&raw_cmds, raw_cmd, i + 1, Self::Binc),
-
-                raw_cmd @ "wtime" => parse_cmd_value_pair(&raw_cmds, raw_cmd, i + 1, Self::Wtime),
-
-                raw_cmd @ "btime" => parse_cmd_value_pair(&raw_cmds, raw_cmd, i + 1, Self::Btime),
-
-                _unknown => Err(format!("unknown command: {s}")),
-            };
+        if raw_cmds.len() % 2 != 0 {
+            return Err(format!("unknown command: {s}"));
         }
 
-        Err("unknown command: invalid input for go".into())
+        let mut w_time = None;
+        let mut b_time = None;
+        let mut w_inc = None;
+        let mut b_inc = None;
+
+        for pair in raw_cmds.chunks_exact(2) {
+            let cmd = pair[0];
+            let val = pair[1]
+                .parse::<u32>()
+                .map_err(|_| format!("unknown command: {s}"))?;
+
+            match cmd {
+                "wtime" => w_time = Some(val),
+                "btime" => b_time = Some(val),
+                "winc" => w_inc = Some(val),
+                "binc" => b_inc = Some(val),
+                _ => return Err(format!("unknown command: {s}")),
+            }
+        }
+
+        match (w_time, b_time, w_inc, b_inc) {
+            (None, None, None, None) => Ok(Self::Infinite),
+            (Some(w_time), Some(b_time), None, None) => Ok(Self::SuddenDeath { w_time, b_time }),
+            (Some(w_time), Some(b_time), Some(w_inc), Some(b_inc)) => Ok(Self::Increment {
+                w_time,
+                w_inc,
+                b_time,
+                b_inc,
+            }),
+
+            _ => Err(format!("invalid time controls: {s}")),
+        }
     }
 }
 
@@ -188,12 +217,9 @@ impl PositionCmd {
         };
 
         let mut pos = Position::new();
-        let mut buff = Vec::with_capacity(cmds.len() - (moves_idx - 1));
-
-        info!("raw cmds: {cmds:?}");
+        let mut buff = Vec::with_capacity(cmds[moves_idx + 1..].len());
 
         for raw_uci_move in &cmds[moves_idx + 1..cmds.len()] {
-            info!("trying to parse {raw_uci_move}");
             if let Some(uci_move) = pos.parse_uci(raw_uci_move) {
                 pos.do_move_inner(uci_move);
                 buff.push(uci_move);
@@ -253,5 +279,27 @@ impl FromStr for SetOptionCmd {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         todo!()
+    }
+}
+
+impl From<GoTimeControlKind> for TimeControlKind {
+    fn from(value: GoTimeControlKind) -> Self {
+        match value {
+            GoTimeControlKind::SuddenDeath { w_time, b_time } => {
+                TimeControlKind::SuddenDeath { w_time, b_time }
+            }
+            GoTimeControlKind::Increment {
+                w_time,
+                w_inc,
+                b_time,
+                b_inc,
+            } => TimeControlKind::Increment {
+                w_time,
+                w_inc,
+                b_time,
+                b_inc,
+            },
+            GoTimeControlKind::Infinite => TimeControlKind::Infinite,
+        }
     }
 }

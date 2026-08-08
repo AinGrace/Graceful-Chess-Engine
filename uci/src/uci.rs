@@ -10,14 +10,17 @@ use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering;
 use std::{fmt::Display, io::Stdout, ops::ControlFlow, thread, time::Instant};
 
+use engine::search;
+use engine::time_control::TimeControl;
 use engine::{
     eval,
-    search::{self, SearchOptions, SearchResult, TTOptions},
+    search::{SearchOptions, SearchResult, TTOptions},
     tt::TT,
 };
 use position::position::Position;
 use tracing::info;
 
+use crate::uci_command::GoTimeControlKind;
 use crate::{
     uci_command::{Command, GoCmd, PositionCmd, SetOptionCmd},
     uci_io,
@@ -56,13 +59,14 @@ impl<W: Write + Send, R: BufRead> Uci<W, R> {
     pub fn run(&mut self) {
         loop {
             match uci_io::read_uci_command(&mut self.reader) {
-                Ok(cmd) => {
-                    info!("received: {cmd:?}");
+                Ok(Some(cmd)) => {
                     let res = self.apply_command(cmd);
                     if res == ControlFlow::Break(()) {
                         break;
                     }
                 }
+
+                Ok(None) => (),
                 Err(_e) => {
                     // TODO: proper error handling
                     println!("{_e}");
@@ -97,7 +101,7 @@ impl<W: Write + Send, R: BufRead> Uci<W, R> {
 
     fn send(item: impl Display, w: &mut impl Write) {
         if let Err(e) = uci_io::send(&item, w) {
-            info!("{e}")
+            info!("err while sending: {e}")
         }
 
         info!("sent {item}");
@@ -134,51 +138,52 @@ impl<W: Write + Send, R: BufRead> Uci<W, R> {
     }
 
     fn handle_ucinewgame(&mut self) {
-        self.stop_flag.store(false, Ordering::Relaxed);
-        self.is_thinking.store(false, Ordering::Relaxed);
+        // self.stop_flag.store(false, Ordering::Relaxed);
+        // self.is_thinking.store(false, Ordering::Relaxed);
         self.pos = Position::new();
     }
 
     fn handle_go(&self, cmd: GoCmd) {
-        // TODO: no support for time controls yet
-        match cmd {
-            GoCmd::Inf => self.handle_go_inner(Some(u8::MAX)),
-            GoCmd::Base => self.handle_go_inner(Some(7)), // TODO: placeholder value
-            GoCmd::Subcommands(_go_sub_cmds) => {
-                self.handle_go_inner(Some(6)); // TODO: placeholder value
+        if !self.is_thinking.load(Ordering::Relaxed) {
+            match cmd {
+                GoCmd::Inf => self.handle_go_inner(Some(u8::MAX), GoTimeControlKind::Infinite),
+                GoCmd::Base(time) => self.handle_go_inner(Some(search::MAX_DEPTH), time),
+                GoCmd::Depth(depth, time) => self.handle_go_inner(Some(depth), time),
             }
         }
     }
 
-    fn handle_go_inner(&self, depth: Option<u8>) {
+    fn handle_go_inner(&self, depth: Option<u8>, time_control_kind: GoTimeControlKind) {
         let mut pos = self.pos.clone();
+
         let stop_flag = Arc::clone(&self.stop_flag);
         let thinking_flag = Arc::clone(&self.is_thinking);
+
         let tt = Arc::clone(&self.tt);
+        let tt_options = TTOptions::Enabled(tt);
 
         let write_clone = Arc::clone(&self.writer);
 
-        thread::spawn(move || {
-            let tt_options = TTOptions::Enabled(tt);
+        let time_control = TimeControl::new(time_control_kind.into(), pos.turn());
 
+        thread::spawn(move || {
             let search_options = SearchOptions {
                 pos: &mut pos,
                 search_depth: depth,
-                tt: tt_options,
+                tt_opts: tt_options,
                 stop_flag: &stop_flag,
+                time_control: time_control,
             };
-
-            thinking_flag.store(true, Ordering::Relaxed);
-            let before_search = Instant::now();
-            let SearchResult { score, best_move } = search::search(search_options);
-            let duration = Instant::now().duration_since(before_search);
-            thinking_flag.store(false, Ordering::Relaxed);
-            info!("search finished in: {} micros", duration.as_micros());
 
             let mut writer_handle = write_clone.lock().expect("FATAL error on acquiring lock");
 
+            thinking_flag.store(true, Ordering::Relaxed);
+
+            let SearchResult { best_move, .. } =
+                search::search(search_options, |s| Self::send(s, &mut *writer_handle));
+            thinking_flag.store(false, Ordering::Relaxed);
+
             if let Some(mv) = best_move {
-                Self::send(format!("info {score}"), &mut *writer_handle);
                 Self::send(format!("bestmove {}", mv.to_uci()), &mut *writer_handle);
             } else {
                 Self::send("bestmove 0000", &mut *writer_handle);
@@ -192,8 +197,6 @@ impl<W: Write + Send, R: BufRead> Uci<W, R> {
 
             PositionCmd::Startpos(items) => {
                 self.pos.reset();
-
-                info!("inside {items:?}");
 
                 if let Some(moves) = items {
                     moves.iter().for_each(|mv| {

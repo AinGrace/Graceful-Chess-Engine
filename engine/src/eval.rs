@@ -113,7 +113,7 @@ pub enum Score {
     Centipawn(i32),
     Mate(i16),
     Draw,
-    Stopped,
+    Abort,
 }
 
 impl Score {
@@ -123,7 +123,7 @@ impl Score {
             Score::Mate(val) => -100_000 - val as i32,
             Score::Centipawn(val) => val,
             Score::Draw => 0,
-            Score::Stopped => 0,
+            Score::Abort => 0,
         }
     }
 
@@ -156,7 +156,7 @@ impl Neg for Score {
             Score::Centipawn(val) => Score::Centipawn(-val),
             Score::Mate(val) => Score::Mate(-val),
             Score::Draw => Score::Draw,
-            Score::Stopped => Score::Stopped,
+            Score::Abort => Score::Abort,
         }
     }
 }
@@ -170,7 +170,7 @@ impl Display for Score {
                 Score::Centipawn(val) => format!("score cp {}", val),
                 Score::Mate(val) => format!("score mate {}", val),
                 Score::Draw => format!("score cp 0"),
-                Score::Stopped => format!("STOPPED"),
+                Score::Abort => format!("STOPPED"),
             }
         )
     }

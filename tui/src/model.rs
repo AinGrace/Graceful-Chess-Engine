@@ -7,6 +7,7 @@ use std::{
 use engine::{
     eval,
     search::{self, SearchResult, TTOptions},
+    time_control::{TimeControl, TimeControlKind},
     tt::TT,
 };
 use engine::{eval::Score, search::SearchOptions};
@@ -88,16 +89,23 @@ impl EngineModel {
 
         let tt_opts = TTOptions::Enabled(Arc::clone(&res.tt));
 
+        let us = res.pos.turn();
+
         let search_opts = SearchOptions {
             pos: &mut res.pos,
             search_depth: Some(6),
-            tt: tt_opts,
+            tt_opts,
             // FIXME: ui thread
             stop_flag: &Arc::new(AtomicBool::new(false)),
+            time_control: TimeControl::new(TimeControlKind::Infinite, us),
         };
 
         let before_search = Instant::now();
-        let SearchResult { score, best_move } = search::search(search_opts);
+        let SearchResult {
+            score,
+            best_move,
+            nodes,
+        } = search::search(search_opts, |_| ());
         let after_search = Instant::now();
 
         let search_time = after_search.duration_since(before_search);
@@ -153,16 +161,23 @@ impl EngineModel {
         let search_depth = self.search_depth;
 
         let tt_opts = TTOptions::Enabled(Arc::clone(&self.tt));
+        let us = self.pos.turn();
 
         let search_opts = SearchOptions {
             pos: &mut self.pos,
             search_depth: search_depth.into(),
-            tt: tt_opts,
+            tt_opts,
             // FIXME: ui thread
             stop_flag: &Arc::new(AtomicBool::new(false)),
+
+            time_control: TimeControl::new(TimeControlKind::Infinite, us),
         };
         let time_begin = Instant::now();
-        let SearchResult { score, best_move } = search::search(search_opts);
+        let SearchResult {
+            score,
+            best_move,
+            nodes,
+        } = search::search(search_opts, |_| ());
         let time_end = Instant::now();
 
         self.best_move_score = score;

@@ -3,13 +3,19 @@ use std::{
     io::{BufRead, Write},
 };
 
+use tracing::info;
+
 use crate::uci_command::Command;
 
-pub fn read_uci_command(reader: &mut impl BufRead) -> Result<Command, String> {
+pub fn read_uci_command(reader: &mut impl BufRead) -> Result<Option<Command>, String> {
     match reader.lines().next() {
-        Some(Ok(line)) => line.parse(),
+        Some(Ok(line)) if line.is_empty() => Ok(None),
+        Some(Ok(line)) => {
+            info!("raw cmd: {line}");
+            Ok(Some(line.parse()?))
+        }
         Some(Err(_e)) => Err("failed to read UCI command".into()),
-        None => Ok(Command::Quit), // EOF is treated as quit command
+        None => Ok(Some(Command::Quit)), // EOF is treated as quit command
     }
 }
 
