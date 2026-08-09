@@ -1,6 +1,5 @@
 use std::{
     fmt::{self, Display},
-    sync::Arc,
     time::{Duration, Instant},
 };
 

@@ -1,7 +1,6 @@
 use engine::time_control::TimeControlKind;
 use position::{fen::Fen, position::Position};
 use std::{collections::HashSet, str::FromStr};
-use tracing::info;
 use types::chess_move::Move;
 
 #[derive(Debug)]

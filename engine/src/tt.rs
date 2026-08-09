@@ -1,6 +1,6 @@
 use types::chess_move::Move;
 
-use crate::eval::Score;
+use crate::{eval::Score, search::Bound};
 
 #[derive(Default, Clone, Debug)]
 pub struct TTEntry {
@@ -8,6 +8,7 @@ pub struct TTEntry {
     pub depth: u8,
     pub score: Score,
     pub best_move: Option<Move>,
+    pub bound: Bound, // TODO
 }
 
 pub struct TT {
@@ -39,13 +40,14 @@ impl TT {
         }
     }
 
-    pub fn insert(&mut self, hash: u64, depth: u8, score: Score, mv: Option<Move>) {
+    pub fn insert(&mut self, hash: u64, depth: u8, score: Score, mv: Option<Move>, bound: Bound) {
         let idx = self.index(hash);
         self.entries[idx] = TTEntry {
             hash,
             depth,
             score,
             best_move: mv,
+            bound,
         }
     }
 

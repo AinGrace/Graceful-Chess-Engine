@@ -15,6 +15,19 @@ use crate::{
 
 pub const MAX_DEPTH: u8 = 128;
 
+#[derive(Debug, Clone, Copy)]
+pub enum Bound {
+    Exact,
+    Lower,
+    Upper,
+}
+
+impl Default for Bound {
+    fn default() -> Self {
+        Self::Exact
+    }
+}
+
 #[derive(Default, Debug)]
 pub struct SearchResult {
     pub score: Score,
@@ -73,8 +86,6 @@ where
     let alpha = Score::Mate(-1);
     let beta = Score::Mate(1);
 
-    println!("{time_control}");
-
     for curr_depth in 1..=depth {
         if time_control.soft_expired() {
             return result;
@@ -121,7 +132,7 @@ fn negamax(
     depth: u8,
     tt_opts: &TTOptions,
     mut alpha: Score,
-    beta: Score,
+    mut beta: Score,
     stop_flag: &Arc<AtomicBool>,
     time_control: &TimeControl,
     nodes: &mut u64,
@@ -137,19 +148,47 @@ fn negamax(
         return SearchResult::new_abort(*nodes);
     }
 
+    let mut bound = Bound::Upper;
+
     if depth == 0 {
         return SearchResult::new(eval::static_eval(pos), None, *nodes);
     }
 
-    // TODO:
+    let mut tt_move = None;
+
     match tt_opts {
         TTOptions::Enabled(tt) => {
             let tt_handle = tt.lock().expect("unable to acquire lock on TT mutex");
             if let Some(entry) = tt_handle.get(pos.zobrist_hash(), depth)
                 && entry.hash == pos.zobrist_hash()
-                && entry.depth >= depth
             {
-                return SearchResult::new(entry.score, entry.best_move, *nodes);
+                tt_move = entry.best_move;
+
+                if entry.depth >= depth {
+                    match entry.bound {
+                        Bound::Exact => {
+                            return SearchResult::new(entry.score, entry.best_move, *nodes);
+                        }
+                        Bound::Lower => {
+                            alpha = if entry.score > alpha {
+                                entry.score
+                            } else {
+                                alpha
+                            }
+                        }
+                        Bound::Upper => {
+                            beta = if entry.score < beta {
+                                entry.score
+                            } else {
+                                beta
+                            }
+                        }
+                    }
+
+                    if alpha >= beta {
+                        return SearchResult::new(entry.score, entry.best_move, *nodes);
+                    }
+                }
             }
         }
         TTOptions::Disabled => (),
@@ -159,7 +198,7 @@ fn negamax(
 
     let mut result = SearchResult::new(Score::Mate(0), None, *nodes);
 
-    let mut scored_moves = mvv_lva::score_moves(moves);
+    let mut scored_moves = mvv_lva::score_moves(moves, tt_move);
 
     for i in 0..scored_moves.len() {
         mvv_lva::bubble_high_scored_move(&mut scored_moves, i);
@@ -168,6 +207,7 @@ fn negamax(
         let undo = pos.do_move_inner(current_move);
 
         *nodes += 1;
+
         let search_result = negamax(
             pos,
             depth - 1,
@@ -192,17 +232,27 @@ fn negamax(
             result.best_move = Some(current_move);
         }
 
-        if inverted_score_step > beta {
-            break;
+        if inverted_score_step > alpha {
+            alpha = inverted_score_step;
+            bound = Bound::Exact;
         }
 
-        alpha = alpha.max(inverted_score_step);
+        if inverted_score_step > beta {
+            bound = Bound::Lower;
+            break;
+        }
     }
 
     match tt_opts {
         TTOptions::Enabled(tt) => {
             let mut tt_handle = tt.lock().expect("FATAL");
-            tt_handle.insert(pos.zobrist_hash(), depth, result.score, result.best_move);
+            tt_handle.insert(
+                pos.zobrist_hash(),
+                depth,
+                result.score,
+                result.best_move,
+                bound,
+            );
         }
         TTOptions::Disabled => (),
     }

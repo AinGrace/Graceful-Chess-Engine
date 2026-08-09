@@ -8,7 +8,7 @@ use std::sync::Mutex;
 use std::sync::MutexGuard;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering;
-use std::{fmt::Display, io::Stdout, ops::ControlFlow, thread, time::Instant};
+use std::{fmt::Display, io::Stdout, ops::ControlFlow, thread};
 
 use engine::search;
 use engine::time_control::TimeControl;
