@@ -1,6 +1,9 @@
-use std::sync::{
-    Arc, Mutex,
-    atomic::{AtomicBool, Ordering},
+use std::{
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, Ordering},
+    },
+    time::Duration,
 };
 
 use position::position::Position;
@@ -10,7 +13,7 @@ use crate::{
     eval::{self, Score},
     mvv_lva,
     time_control::TimeControl,
-    tt::TT,
+    tt::{TT, TTOptions},
 };
 
 pub const MAX_DEPTH: u8 = 128;
@@ -30,12 +33,48 @@ impl Default for Bound {
 
 #[derive(Default, Debug)]
 pub struct SearchResult {
+    pub depth: u8,
+    pub score: Score,
+    pub best_move: Option<Move>,
+    pub nodes: u64,
+    pub nps: u64,
+    pub elapsed_millis: u128,
+}
+
+impl SearchResult {
+    #[track_caller]
+    fn of(
+        NegamaxResult {
+            score,
+            best_move,
+            nodes,
+        }: NegamaxResult,
+        depth: u8,
+        elapsed: Duration,
+    ) -> Self {
+        let elapsed_millis = elapsed.as_millis();
+        let elapsed_secs = elapsed.as_secs_f64();
+        let nps = (nodes as f64 / elapsed_secs) as u64;
+
+        Self {
+            depth,
+            score,
+            best_move,
+            nodes,
+            nps,
+            elapsed_millis,
+        }
+    }
+}
+
+#[derive(Default, Debug)]
+struct NegamaxResult {
     pub score: Score,
     pub best_move: Option<Move>,
     pub nodes: u64,
 }
 
-impl SearchResult {
+impl NegamaxResult {
     pub fn new_abort(nodes: u64) -> Self {
         Self::new(Score::Abort, None, nodes)
     }
@@ -55,15 +94,10 @@ impl SearchResult {
 
 pub struct SearchOptions<'a> {
     pub pos: &'a mut Position,
-    pub search_depth: Option<u8>,
+    pub search_depth: u8,
     pub tt_opts: TTOptions,
-    pub stop_flag: &'a Arc<AtomicBool>,
+    pub stop_thinking: &'a Arc<AtomicBool>,
     pub time_control: TimeControl,
-}
-
-pub enum TTOptions {
-    Enabled(Arc<Mutex<TT>>),
-    Disabled,
 }
 
 pub fn search<F>(
@@ -71,22 +105,20 @@ pub fn search<F>(
         pos,
         search_depth,
         tt_opts,
-        stop_flag,
+        stop_thinking: stop_flag,
         time_control,
     }: SearchOptions,
     mut f: F,
 ) -> SearchResult
 where
-    F: FnMut(&str),
+    F: FnMut(&SearchResult),
 {
     let mut result = SearchResult::default();
-
-    let depth = search_depth.unwrap_or(MAX_DEPTH);
 
     let alpha = Score::Mate(-1);
     let beta = Score::Mate(1);
 
-    for curr_depth in 1..=depth {
+    for curr_depth in 1..=search_depth {
         if time_control.soft_expired() {
             return result;
         }
@@ -106,18 +138,13 @@ where
             return result;
         }
 
-        let searched_nodes = current_result.nodes;
-        let nps = searched_nodes as f64 / time_control.elapsed_secs_f64();
+        result = SearchResult::of(
+            current_result,
+            curr_depth,
+            time_control.elapsed_from_start(),
+        );
 
-        f(&format!(
-            "info depth {curr_depth} {} nodes {} nps {} time {}",
-            current_result.score,
-            searched_nodes,
-            nps.trunc(),
-            time_control.elapsed_from_start().as_millis()
-        ));
-
-        result = current_result;
+        f(&result);
 
         if time_control.soft_expired() {
             return result;
@@ -136,67 +163,70 @@ fn negamax(
     stop_flag: &Arc<AtomicBool>,
     time_control: &TimeControl,
     nodes: &mut u64,
-) -> SearchResult {
+) -> NegamaxResult {
     if nodes.trailing_zeros() == 16 {
         if time_control.hard_expired() {
-            return SearchResult::new_abort(*nodes);
+            return NegamaxResult::new_abort(*nodes);
         }
     }
 
     if stop_flag.load(Ordering::Relaxed) {
         stop_flag.store(false, Ordering::Relaxed);
-        return SearchResult::new_abort(*nodes);
+        return NegamaxResult::new_abort(*nodes);
     }
 
     let mut bound = Bound::Upper;
 
     if depth == 0 {
-        return SearchResult::new(eval::static_eval(pos), None, *nodes);
+        return NegamaxResult::new(eval::static_eval(pos), None, *nodes);
     }
 
     let mut tt_move = None;
 
-    match tt_opts {
-        TTOptions::Enabled(tt) => {
-            let tt_handle = tt.lock().expect("unable to acquire lock on TT mutex");
-            if let Some(entry) = tt_handle.get(pos.zobrist_hash(), depth)
-                && entry.hash == pos.zobrist_hash()
-            {
-                tt_move = entry.best_move;
+    {
+        match tt_opts {
+            TTOptions::Enabled(tt) => {
+                let tt = tt.lock().expect("FATAL");
 
-                if entry.depth >= depth {
-                    match entry.bound {
-                        Bound::Exact => {
-                            return SearchResult::new(entry.score, entry.best_move, *nodes);
-                        }
-                        Bound::Lower => {
-                            alpha = if entry.score > alpha {
-                                entry.score
-                            } else {
-                                alpha
+                if let Some(entry) = tt.get(pos.zobrist_hash(), depth)
+                    && entry.hash == pos.zobrist_hash()
+                {
+                    tt_move = entry.best_move;
+
+                    if entry.depth >= depth {
+                        match entry.bound {
+                            Bound::Exact => {
+                                return NegamaxResult::new(entry.score, entry.best_move, *nodes);
+                            }
+                            Bound::Lower => {
+                                alpha = if entry.score > alpha {
+                                    entry.score
+                                } else {
+                                    alpha
+                                }
+                            }
+                            Bound::Upper => {
+                                beta = if entry.score < beta {
+                                    entry.score
+                                } else {
+                                    beta
+                                }
                             }
                         }
-                        Bound::Upper => {
-                            beta = if entry.score < beta {
-                                entry.score
-                            } else {
-                                beta
-                            }
-                        }
-                    }
 
-                    if alpha >= beta {
-                        return SearchResult::new(entry.score, entry.best_move, *nodes);
+                        if alpha >= beta {
+                            return NegamaxResult::new(entry.score, entry.best_move, *nodes);
+                        }
                     }
                 }
             }
+            TTOptions::Disabled => (),
         }
-        TTOptions::Disabled => (),
-    };
+    }
 
     let moves = pos.legal_moves();
 
-    let mut result = SearchResult::new(Score::Mate(0), None, *nodes);
+    let mut result = NegamaxResult::new(Score::Mate(0), None, *nodes);
 
     let mut scored_moves = mvv_lva::score_moves(moves, tt_move);
 
@@ -243,18 +273,21 @@ fn negamax(
         }
     }
 
-    match tt_opts {
-        TTOptions::Enabled(tt) => {
-            let mut tt_handle = tt.lock().expect("FATAL");
-            tt_handle.insert(
-                pos.zobrist_hash(),
-                depth,
-                result.score,
-                result.best_move,
-                bound,
-            );
+    {
+        match tt_opts {
+            TTOptions::Enabled(tt) => {
+                let mut tt = tt.lock().expect("FATAL");
+
+                tt.insert(
+                    pos.zobrist_hash(),
+                    depth,
+                    result.score,
+                    result.best_move,
+                    bound,
+                );
+            }
+            TTOptions::Disabled => (),
         }
-        TTOptions::Disabled => (),
     }
 
     result.nodes = *nodes;

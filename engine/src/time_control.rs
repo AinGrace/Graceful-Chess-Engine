@@ -17,7 +17,6 @@ pub struct TimeControl {
 
 impl TimeControl {
     pub fn new(kind: TimeControlKind, us: Color) -> Self {
-        println!("{kind:?}");
         let (total_allocation, increment) = match (&kind, us) {
             (TimeControlKind::Infinite, _) => (u32::MAX, u32::MAX),
 
@@ -37,8 +36,6 @@ impl TimeControl {
                 increment: u32::MAX,
             };
         }
-
-        println!("total: {total_allocation}");
 
         let soft_limit = Duration::from_millis((total_allocation / 30 + increment / 2) as u64);
         let hard_limit = soft_limit.mul_f32(1.4);

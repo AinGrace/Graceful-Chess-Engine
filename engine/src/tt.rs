@@ -1,6 +1,20 @@
+use std::sync::{Arc, Mutex};
+
 use types::chess_move::Move;
 
 use crate::{eval::Score, search::Bound};
+
+#[derive(Clone)]
+pub enum TTOptions {
+    Enabled(Arc<Mutex<TT>>),
+    Disabled,
+}
+
+impl Default for TTOptions {
+    fn default() -> Self {
+        Self::Enabled(Arc::new(TT::default().into()))
+    }
+}
 
 #[derive(Default, Clone, Debug)]
 pub struct TTEntry {
@@ -8,7 +22,7 @@ pub struct TTEntry {
     pub depth: u8,
     pub score: Score,
     pub best_move: Option<Move>,
-    pub bound: Bound, // TODO
+    pub bound: Bound,
 }
 
 pub struct TT {
@@ -17,7 +31,7 @@ pub struct TT {
 }
 
 impl TT {
-    pub const DEFAULT_SIZE_MB: u16 = 64;
+    pub const DEFAULT_SIZE_MB: u16 = 256;
 
     pub fn new(size_in_mb: u16) -> Self {
         let size = ((size_in_mb as usize) * 1024 * 1024) / size_of::<TTEntry>();

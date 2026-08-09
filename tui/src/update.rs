@@ -24,32 +24,32 @@ pub enum Message {
     ChangeFocus,
 }
 
-pub fn update(model: &mut Model, msg: Message) {
-    match msg {
-        Message::PushChar(chr) => {
-            model.push_char(chr);
-        }
-        Message::RemoveChar => {
-            model.pop_char();
-        }
-        Message::Confirm => model.confirm_action(),
-        Message::UndoMove => model.undo_move(),
-        Message::AcceptBestMove => model.play_best_move(),
-        Message::Quit => model.quit(),
-        Message::SearchIncrement => model.set_search_depth(model.search_depth().saturating_add(1)),
-        Message::SearchDecrement => model.set_search_depth(model.search_depth().saturating_sub(1)),
-        Message::Search => model.init_search(),
-        Message::MouseScrollDown { col, row } => {
-            model.set_scrolling(Scrolling::Down { col, row });
-        }
-        Message::MouseScrollUp { col, row } => {
-            model.set_scrolling(Scrolling::Up { col, row });
-        }
-        Message::MouseMove { .. } => {}
-        Message::ChangeFocus => model.change_focus(),
-        Message::CopyFenToClipboard => model.copy_fen_to_clipboard(),
-    }
-}
+// pub fn update(model: &mut Model, msg: Message) {
+//     match msg {
+//         Message::PushChar(chr) => {
+//             model.push_char(chr);
+//         }
+//         Message::RemoveChar => {
+//             model.pop_char();
+//         }
+//         Message::Confirm => model.confirm_action(),
+//         Message::UndoMove => model.undo_move(),
+//         Message::AcceptBestMove => model.play_best_move(),
+//         Message::Quit => model.quit(),
+//         Message::SearchIncrement => model.set_search_depth(model.search_depth().saturating_add(1)),
+//         Message::SearchDecrement => model.set_search_depth(model.search_depth().saturating_sub(1)),
+//         Message::Search => model.init_search(),
+//         Message::MouseScrollDown { col, row } => {
+//             model.set_scrolling(Scrolling::Down { col, row });
+//         }
+//         Message::MouseScrollUp { col, row } => {
+//             model.set_scrolling(Scrolling::Up { col, row });
+//         }
+//         Message::MouseMove { .. } => {}
+//         Message::ChangeFocus => model.change_focus(),
+//         Message::CopyFenToClipboard => model.copy_fen_to_clipboard(),
+//     }
+// }
 
 pub fn handle_event() -> color_eyre::Result<Option<Message>> {
     match crossterm::event::read()? {

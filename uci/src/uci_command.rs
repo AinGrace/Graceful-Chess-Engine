@@ -1,6 +1,6 @@
 use engine::time_control::TimeControlKind;
 use position::{fen::Fen, position::Position};
-use std::{collections::HashSet, str::FromStr};
+use std::str::FromStr;
 use types::chess_move::Move;
 
 #[derive(Debug)]
@@ -192,19 +192,13 @@ impl FromStr for PositionCmd {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let cmds = s.split_ascii_whitespace().collect::<Vec<&str>>();
 
-        if cmds.is_empty() {
-            return Ok(Self::Base);
-        }
-
-        let sub_cmd = cmds[0];
-        let sub_cmd = sub_cmd.trim();
-
-        match sub_cmd {
-            "startpos" => Ok(Self::parse_startpos(&cmds[1..])),
-            "fen" => {
-                Self::parse_fen(&cmds[1..]).map_or_else(|| Err(format!("unknown command: {s}")), Ok)
+        match cmds.as_slice() {
+            [] => Ok(Self::Base),
+            ["startpos", rest @ ..] => Ok(Self::parse_startpos(rest)),
+            ["fen", rest @ ..] => {
+                Self::parse_fen(rest).map_or_else(|| Err(format!("unknown command: {s}")), Ok)
             }
-            unknown => Err(format!("unknown command: {unknown}")),
+            [unknown, ..] => Err(format!("unknown command: {unknown}")),
         }
     }
 }
@@ -250,7 +244,7 @@ impl PositionCmd {
             return None; // TODO: return Err with short decription of what went wrong
         };
 
-        let Ok(pos) = fen.clone().try_into_position() else {
+        let Ok(pos) = fen.clone().try_to_position() else {
             return None; // TODO: return Err with short decription of what went wrong
         };
 

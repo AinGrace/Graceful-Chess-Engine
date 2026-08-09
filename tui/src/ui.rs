@@ -11,42 +11,42 @@ use types::{file::File, piece::Piece, rank::Rank, square::Square};
 
 use crate::model::{FocusMode, Model};
 
-pub fn global_render(frame: &mut Frame, model: &mut Model) {
-    let left_middle_right =
-        Layout::horizontal(Constraint::from_percentages([30, 40, 30])).split(frame.area());
+// pub fn global_render(frame: &mut Frame, model: &mut Model) {
+//     let left_middle_right =
+//         Layout::horizontal(Constraint::from_percentages([30, 40, 30])).split(frame.area());
 
-    let middle_top_bottom =
-        Layout::vertical([Constraint::Fill(1), Constraint::Max(3), Constraint::Max(3)])
-            .split(left_middle_right[1]);
+//     let middle_top_bottom =
+//         Layout::vertical([Constraint::Fill(1), Constraint::Max(3), Constraint::Max(3)])
+//             .split(left_middle_right[1]);
 
-    let right_top_bottom =
-        Layout::vertical(Constraint::from_percentages([60, 40])).split(left_middle_right[2]);
+//     let right_top_bottom =
+//         Layout::vertical(Constraint::from_percentages([60, 40])).split(left_middle_right[2]);
 
-    let log_box = build_logs(model.logs().to_vec());
-    if let Some(scroll) = model.take_scrolling()
-        && left_middle_right[0].contains(Position::new(scroll.col(), scroll.row()))
-    {
-        match scroll {
-            crate::model::Scrolling::Up { .. } => model.log_state().select_previous(),
-            crate::model::Scrolling::Down { .. } => model.log_state().select_next(),
-        }
-    }
+//     let log_box = build_logs(model.logs().to_vec());
+//     if let Some(scroll) = model.take_scrolling()
+//         && left_middle_right[0].contains(Position::new(scroll.col(), scroll.row()))
+//     {
+//         match scroll {
+//             crate::model::Scrolling::Up { .. } => model.log_state().select_previous(),
+//             crate::model::Scrolling::Down { .. } => model.log_state().select_next(),
+//         }
+//     }
 
-    frame.render_stateful_widget(log_box, left_middle_right[0], model.log_state());
+//     frame.render_stateful_widget(log_box, left_middle_right[0], model.log_state());
 
-    let board_box = build_chessboard(model);
-    frame.render_widget(board_box, middle_top_bottom[0]);
+//     let board_box = build_chessboard(model);
+//     frame.render_widget(board_box, middle_top_bottom[0]);
 
-    let info_box = build_info(model);
-    frame.render_widget(info_box, right_top_bottom[0]);
+//     let info_box = build_info(model);
+//     frame.render_widget(info_box, right_top_bottom[0]);
 
-    let (move_input_box, fen_input_box) = build_input_boxes(model);
-    frame.render_widget(move_input_box, middle_top_bottom[1]);
-    frame.render_widget(fen_input_box, middle_top_bottom[2]);
+//     let (move_input_box, fen_input_box) = build_input_boxes(model);
+//     frame.render_widget(move_input_box, middle_top_bottom[1]);
+//     frame.render_widget(fen_input_box, middle_top_bottom[2]);
 
-    let history_box = build_history(model);
-    frame.render_widget(history_box, right_top_bottom[1]);
-}
+//     let history_box = build_history(model);
+//     frame.render_widget(history_box, right_top_bottom[1]);
+// }
 
 fn build_history(model: &Model) -> Paragraph<'_> {
     let line = Line::from_iter(
@@ -95,45 +95,45 @@ fn build_input_boxes(model: &Model) -> (Paragraph<'static>, Paragraph<'static>) 
     (move_input, fen_input)
 }
 
-fn build_info(model: &Model) -> Paragraph<'_> {
-    let line = |label: &str, val: &dyn Display| Line::from(format!("{label}: {val}"));
+// fn build_info(model: &Model) -> Paragraph<'_> {
+//     let line = |label: &str, val: &dyn Display| Line::from(format!("{label}: {val}"));
 
-    let legal_moves = model
-        .left_partial_move()
-        .and_then(|raw| Square::from_str(&raw).ok())
-        .and_then(|sq| model.legal_moves_of(sq))
-        .map(|moves| {
-            moves
-                .iter()
-                .map(|mv| mv.to_string())
-                .collect::<Vec<_>>()
-                .join(", ")
-        })
-        .unwrap_or_else(|| "None".to_string());
+//     let legal_moves = model
+//         .left_partial_move()
+//         .and_then(|raw| Square::from_str(&raw).ok())
+//         .and_then(|sq| model.legal_moves_of(sq))
+//         .map(|moves| {
+//             moves
+//                 .iter()
+//                 .map(|mv| mv.to_string())
+//                 .collect::<Vec<_>>()
+//                 .join(", ")
+//         })
+//         .unwrap_or_else(|| "None".to_string());
 
-    let search_time = model.search_time();
+//     let search_time = model.search_time();
 
-    Paragraph::new(vec![
-        line("Turn", &model.turn().char()),
-        line("Ep square", &model.ep_square_to_str()),
-        line("Best move ", &model.best_move_to_uci()),
-        line("Best move eval", &model.best_move_score().to_string()),
-        line("Static Eval", &model.static_eval()),
-        line("Search depth", &model.search_depth()),
-        Line::from(format!(
-            "Search time: millis → {} | micros → {}",
-            search_time.as_millis(),
-            search_time.as_micros(),
-        )),
-        line("Half moves", &model.half_moves()),
-        line("Full moves", &model.full_moves()),
-        line("Zobrist hash", &model.z_hash()),
-        line("FEN", &model.position_fen()),
-        Line::from(format!("Legal moves for selection: {legal_moves}")),
-    ])
-    .block(Block::bordered().title("Info"))
-    .wrap(Wrap { trim: true })
-}
+//     Paragraph::new(vec![
+//         line("Turn", &model.turn().char()),
+//         line("Ep square", &model.ep_square_to_str()),
+//         line("Best move ", &model.best_move_to_uci()),
+//         line("Best move eval", &model.best_move_score().to_string()),
+//         line("Static Eval", &model.static_eval()),
+//         line("Search depth", &model.search_depth()),
+//         Line::from(format!(
+//             "Search time: millis → {} | micros → {}",
+//             search_time.as_millis(),
+//             search_time.as_micros(),
+//         )),
+//         line("Half moves", &model.half_moves()),
+//         line("Full moves", &model.full_moves()),
+//         line("Zobrist hash", &model.z_hash()),
+//         line("FEN", &model.position_fen()),
+//         Line::from(format!("Legal moves for selection: {legal_moves}")),
+//     ])
+//     .block(Block::bordered().title("Info"))
+//     .wrap(Wrap { trim: true })
+// }
 
 // TODO: move chessboard UI building into separate module
 fn build_chessboard(model: &mut Model) -> Paragraph<'static> {

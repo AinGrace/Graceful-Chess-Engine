@@ -61,7 +61,7 @@ impl Fen {
         })
     }
 
-    pub fn try_into_position(self) -> Result<Position, PositionError> {
+    pub fn try_to_position(self) -> Result<Position, PositionError> {
         Position::from_fen(self)
     }
 

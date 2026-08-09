@@ -6,17 +6,10 @@ use std::io::stdout;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::MutexGuard;
-use std::sync::atomic::AtomicBool;
-use std::sync::atomic::Ordering;
-use std::{fmt::Display, io::Stdout, ops::ControlFlow, thread};
+use std::{fmt::Display, io::Stdout, ops::ControlFlow};
 
-use engine::search;
+use engine::Engine;
 use engine::time_control::TimeControl;
-use engine::{
-    eval,
-    search::{SearchOptions, SearchResult, TTOptions},
-    tt::TT,
-};
 use position::position::Position;
 use tracing::info;
 
@@ -30,12 +23,9 @@ static ID_VALUES: &[&str] = &["id name Graceful", "id author AinGrace"];
 
 #[rustfmt::skip]
 pub struct Uci<W: Write + Send + 'static, R: BufRead> {
-    tt:          Arc<Mutex<TT>>,
-    pos:         Position,
+    engine:      Engine,
     writer:      Arc<Mutex<W>>,
     reader:      R,
-    stop_flag:   Arc<AtomicBool>,
-    is_thinking: Arc<AtomicBool>,
 }
 
 impl Uci<Stdout, StdinLock<'static>> {
@@ -47,10 +37,7 @@ impl Uci<Stdout, StdinLock<'static>> {
 impl<W: Write + Send, R: BufRead> Uci<W, R> {
     pub fn new(writer: W, reader: R) -> Self {
         Self {
-            pos: Position::new(),
-            tt: Arc::new(TT::default().into()),
-            is_thinking: Arc::new(AtomicBool::new(false)),
-            stop_flag: Arc::new(AtomicBool::new(false)),
+            engine: Engine::default(),
             writer: Arc::new(writer.into()),
             reader,
         }
@@ -104,16 +91,16 @@ impl<W: Write + Send, R: BufRead> Uci<W, R> {
             info!("err while sending: {e}")
         }
 
-        info!("sent {item}");
+        info!("-> {item}");
     }
 
     fn handle_d(&self) {
-        let pos_str = format!("{:?}", self.pos);
+        let pos_str = format!("{:?}", self.engine.pos());
         Self::send(pos_str, &mut *self.acquire_writer_lock());
     }
 
     fn handle_eval(&self) {
-        let eval = eval::static_eval(&self.pos);
+        let eval = self.engine.eval();
         Self::send(eval, &mut &mut *self.acquire_writer_lock());
     }
 
@@ -128,9 +115,7 @@ impl<W: Write + Send, R: BufRead> Uci<W, R> {
     }
 
     fn handle_stop(&self) {
-        if self.is_thinking.load(Ordering::Relaxed) {
-            self.stop_flag.store(true, Ordering::Relaxed);
-        }
+        self.engine.stop_search();
     }
 
     fn handle_isready(&self) {
@@ -138,57 +123,43 @@ impl<W: Write + Send, R: BufRead> Uci<W, R> {
     }
 
     fn handle_ucinewgame(&mut self) {
-        // self.stop_flag.store(false, Ordering::Relaxed);
-        // self.is_thinking.store(false, Ordering::Relaxed);
-        self.pos = Position::new();
+        self.engine.set_pos(Position::default());
     }
 
     fn handle_go(&self, cmd: GoCmd) {
-        if !self.is_thinking.load(Ordering::Relaxed) {
-            match cmd {
-                GoCmd::Inf => self.handle_go_inner(Some(u8::MAX), GoTimeControlKind::Infinite),
-                GoCmd::Base(time) => self.handle_go_inner(Some(search::MAX_DEPTH), time),
-                GoCmd::Depth(depth, time) => self.handle_go_inner(Some(depth), time),
-            }
+        match cmd {
+            GoCmd::Inf => self.handle_go_inner(Some(u8::MAX), GoTimeControlKind::Infinite),
+            GoCmd::Base(time) => self.handle_go_inner(None, time),
+            GoCmd::Depth(depth, time) => self.handle_go_inner(Some(depth), time),
         }
     }
 
     fn handle_go_inner(&self, depth: Option<u8>, time_control_kind: GoTimeControlKind) {
-        let mut pos = self.pos.clone();
+        let intermediate_writer = Arc::clone(&self.writer);
+        let final_writer = Arc::clone(&self.writer);
 
-        let stop_flag = Arc::clone(&self.stop_flag);
-        let thinking_flag = Arc::clone(&self.is_thinking);
-
-        let tt = Arc::clone(&self.tt);
-        let tt_options = TTOptions::Enabled(tt);
-
-        let write_clone = Arc::clone(&self.writer);
-
-        let time_control = TimeControl::new(time_control_kind.into(), pos.turn());
-
-        thread::spawn(move || {
-            let search_options = SearchOptions {
-                pos: &mut pos,
-                search_depth: depth,
-                tt_opts: tt_options,
-                stop_flag: &stop_flag,
-                time_control: time_control,
-            };
-
-            let mut writer_handle = write_clone.lock().expect("FATAL error on acquiring lock");
-
-            thinking_flag.store(true, Ordering::Relaxed);
-
-            let SearchResult { best_move, .. } =
-                search::search(search_options, |s| Self::send(s, &mut *writer_handle));
-            thinking_flag.store(false, Ordering::Relaxed);
-
-            if let Some(mv) = best_move {
-                Self::send(format!("bestmove {}", mv.to_uci()), &mut *writer_handle);
-            } else {
-                Self::send("bestmove 0000", &mut *writer_handle);
-            }
-        });
+        self.engine.search(
+            depth,
+            TimeControl::new(time_control_kind.into(), self.engine.pos().turn()),
+            move |res| {
+                let mut writer = intermediate_writer.lock().expect("FATAL");
+                Self::send(
+                    format!(
+                        "info depth {} {} nodes {} nps {} time {}",
+                        res.depth, res.score, res.nodes, res.nps, res.elapsed_millis
+                    ),
+                    &mut *writer,
+                );
+            },
+            move |res| {
+                let mut writer = final_writer.lock().expect("FATAL");
+                if let Some(res) = res {
+                    Self::send(format!("bestmove {}", res.to_uci()), &mut *writer)
+                } else {
+                    Self::send("bestmove 0000", &mut *writer);
+                }
+            },
+        );
     }
 
     fn handle_position(&mut self, cmd: PositionCmd) {
@@ -196,23 +167,27 @@ impl<W: Write + Send, R: BufRead> Uci<W, R> {
             PositionCmd::Base => (),
 
             PositionCmd::Startpos(items) => {
-                self.pos.reset();
+                let mut pos = Position::new();
 
                 if let Some(moves) = items {
                     moves.iter().for_each(|mv| {
-                        self.pos.do_move_inner(*mv);
+                        pos.do_move_inner(*mv);
                     });
                 }
+
+                self.engine.set_pos(pos);
             }
 
             PositionCmd::Fen(fen, items) => {
-                self.pos = fen.try_into_position().expect("fen is already valid");
+                let mut pos = fen.try_to_position().expect("fen is already valid");
 
                 if let Some(moves) = items {
                     moves.iter().for_each(|mv| {
-                        self.pos.do_move_inner(*mv);
+                        pos.do_move_inner(*mv);
                     });
                 }
+
+                self.engine.set_pos(pos);
             }
         }
     }

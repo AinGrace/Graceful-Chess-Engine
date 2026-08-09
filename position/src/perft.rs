@@ -16,7 +16,7 @@ fn perft_comparing() {
     let other_chessboard = their_fen
         .into_position::<Chess>(shakmaty::CastlingMode::Standard)
         .unwrap();
-    let chessboard: Position = our_fen.try_into_position().unwrap();
+    let chessboard: Position = our_fen.try_to_position().unwrap();
 
     let res = perft_comparing_inner(
         HistoryChessBoard {
@@ -35,7 +35,7 @@ fn perft_comparing() {
 fn mismatch_test() {
     let raw_fen = "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1";
     let fen: Fen = raw_fen.parse().unwrap();
-    let mut chessboard: Position = fen.try_into_position().unwrap();
+    let mut chessboard: Position = fen.try_to_position().unwrap();
 
     chessboard.do_move_inner(Move::capture(
         Role::Pawn,
@@ -119,7 +119,7 @@ fn perft_depth_8_equals_84_998_978_956() {
 fn perft_custom_position_1() {
     let raw_fen = "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1";
 
-    let chessboard: Position = Fen::new(raw_fen).unwrap().try_into_position().unwrap();
+    let chessboard: Position = Fen::new(raw_fen).unwrap().try_to_position().unwrap();
 
     assert_eq!(perft(&chessboard.clone(), 1), 48);
     assert_eq!(perft(&chessboard.clone(), 2), 2039);
@@ -133,7 +133,7 @@ fn perft_custom_position_1() {
 fn perft_custom_position_2() {
     let raw_fen = "8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1 ";
 
-    let chessboard = Fen::new(raw_fen).unwrap().try_into_position().unwrap();
+    let chessboard = Fen::new(raw_fen).unwrap().try_to_position().unwrap();
 
     assert_eq!(perft(&chessboard.clone(), 1), 14);
     assert_eq!(perft(&chessboard.clone(), 2), 191);
@@ -149,7 +149,7 @@ fn perft_custom_position_2() {
 fn perft_custom_position_3() {
     let raw_fen = "r3k2r/Pppp1ppp/1b3nbN/nP6/BBP1P3/q4N2/Pp1P2PP/R2Q1RK1 w kq - 0 1";
 
-    let chessboard = Fen::new(raw_fen).unwrap().try_into_position().unwrap();
+    let chessboard = Fen::new(raw_fen).unwrap().try_to_position().unwrap();
 
     assert_eq!(perft(&chessboard.clone(), 1), 6);
     assert_eq!(perft(&chessboard.clone(), 2), 264);
@@ -163,7 +163,7 @@ fn perft_custom_position_3() {
 fn perft_custom_position_4() {
     let raw_fen = "rnbq1k1r/pp1Pbppp/2p5/8/2B5/8/PPP1NnPP/RNBQK2R w KQ - 1 8";
 
-    let chessboard = Fen::new(raw_fen).unwrap().try_into_position().unwrap();
+    let chessboard = Fen::new(raw_fen).unwrap().try_to_position().unwrap();
 
     assert_eq!(perft(&chessboard.clone(), 1), 44);
     assert_eq!(perft(&chessboard.clone(), 2), 1486);
@@ -177,7 +177,7 @@ fn perft_custom_position_4() {
 fn perft_custom_position_5() {
     let raw_fen = "r4rk1/1pp1qppp/p1np1n2/2b1p1B1/2B1P1b1/P1NP1N2/1PP1QPPP/R4RK1 w - - 0 10";
 
-    let chessboard = Fen::new(raw_fen).unwrap().try_into_position().unwrap();
+    let chessboard = Fen::new(raw_fen).unwrap().try_to_position().unwrap();
 
     assert_eq!(perft(&chessboard.clone(), 1), 46);
     assert_eq!(perft(&chessboard.clone(), 2), 2079);
@@ -194,10 +194,7 @@ fn perft_suite() {
 
     suite.entries.into_iter().for_each(|entry| {
         let fen = entry.fen;
-        let chessboard = fen
-            .clone()
-            .try_into_position()
-            .expect("Fen should be valid");
+        let chessboard = fen.clone().try_to_position().expect("Fen should be valid");
 
         entry
             .depth_values

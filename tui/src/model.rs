@@ -4,13 +4,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use engine::{
-    eval,
-    search::{self, SearchResult, TTOptions},
-    time_control::{TimeControl, TimeControlKind},
-    tt::TT,
-};
-use engine::{eval::Score, search::SearchOptions};
+use engine::Engine;
 use position::{
     fen::Fen,
     position::{Position, Undo},
@@ -48,146 +42,8 @@ pub enum FocusMode {
     FenInput,
 }
 
-pub struct EngineModel {
-    pos: Position,
-    legal_moves: MoveList,
-
-    tt: Arc<Mutex<TT>>,
-
-    best_move: Option<Move>,
-    best_move_score: Score,
-    static_evaluation_score: Score,
-
-    undo: Vec<Undo>,
-
-    search_time: Duration,
-    search_depth: u8,
-}
-
-impl EngineModel {
-    pub fn new() -> Self {
-        let pos = Position::new();
-        let legal_moves = pos.legal_moves();
-
-        let tt = TT::new(TT::DEFAULT_SIZE_MB);
-        let wrapped_tt = Arc::new(Mutex::new(tt));
-        let static_evaluation_score = eval::static_eval(&pos);
-        let undo = Vec::with_capacity(128);
-        let search_depth = DEFAULT_SEARCH_DEPTH;
-
-        let mut res = Self {
-            pos,
-            legal_moves,
-            tt: wrapped_tt,
-            best_move: None,
-            best_move_score: Score::Centipawn(0),
-            static_evaluation_score,
-            undo,
-            search_time: Duration::from_nanos(0),
-            search_depth,
-        };
-
-        let tt_opts = TTOptions::Enabled(Arc::clone(&res.tt));
-
-        let us = res.pos.turn();
-
-        let search_opts = SearchOptions {
-            pos: &mut res.pos,
-            search_depth: Some(6),
-            tt_opts,
-            // FIXME: ui thread
-            stop_flag: &Arc::new(AtomicBool::new(false)),
-            time_control: TimeControl::new(TimeControlKind::Infinite, us),
-        };
-
-        let before_search = Instant::now();
-        let SearchResult {
-            score,
-            best_move,
-            nodes,
-        } = search::search(search_opts, |_| ());
-        let after_search = Instant::now();
-
-        let search_time = after_search.duration_since(before_search);
-        res.search_time = search_time;
-        res.best_move = best_move;
-        res.best_move_score = score;
-
-        res
-    }
-
-    pub fn make_move(&mut self, raw_uci: &str) -> Option<Move> {
-        let Some(mv) = self
-            .legal_moves
-            .iter()
-            .find(|mv| mv.to_uci() == raw_uci)
-            .and_then(|mv| Some(*mv))
-        else {
-            return None;
-        };
-
-        let undo = self.pos.do_move_inner(mv);
-        self.undo.push(undo);
-
-        self.legal_moves = self.pos.legal_moves();
-
-        self.init_search();
-
-        Some(mv)
-    }
-
-    pub fn undo_move(&mut self) -> bool {
-        let Some(undo) = self.undo.pop() else {
-            return false;
-        };
-
-        self.pos.undo_move(undo);
-        self.legal_moves = self.pos.legal_moves();
-        self.init_search();
-
-        true
-    }
-
-    pub fn apply_fen(&mut self, new_pos: Position) {
-        self.pos = new_pos;
-        self.legal_moves = self.pos.legal_moves();
-        self.undo.clear();
-        self.search_depth = DEFAULT_SEARCH_DEPTH;
-
-        self.init_search();
-    }
-
-    fn init_search(&mut self) {
-        let search_depth = self.search_depth;
-
-        let tt_opts = TTOptions::Enabled(Arc::clone(&self.tt));
-        let us = self.pos.turn();
-
-        let search_opts = SearchOptions {
-            pos: &mut self.pos,
-            search_depth: search_depth.into(),
-            tt_opts,
-            // FIXME: ui thread
-            stop_flag: &Arc::new(AtomicBool::new(false)),
-
-            time_control: TimeControl::new(TimeControlKind::Infinite, us),
-        };
-        let time_begin = Instant::now();
-        let SearchResult {
-            score,
-            best_move,
-            nodes,
-        } = search::search(search_opts, |_| ());
-        let time_end = Instant::now();
-
-        self.best_move_score = score;
-        self.best_move = best_move;
-        self.search_time = time_end.duration_since(time_begin);
-    }
-}
-
 pub struct Model {
-    engine: EngineModel,
+    engine: engine::Engine,
     partial_move: Vec<char>,
     partial_fen: Vec<char>,
     move_history: Vec<Move>,
@@ -200,7 +56,7 @@ pub struct Model {
 
 impl Model {
     pub fn new() -> Self {
-        let engine = EngineModel::new();
+        let engine = Engine::new(Position::default(), 64);
         let partial_move = Vec::with_capacity(5);
         let partial_fen = Vec::with_capacity(20);
         let move_history = Vec::with_capacity(128);
@@ -235,37 +91,34 @@ impl Model {
         self.logs.as_slices().0
     }
 
-    pub fn legal_moves(&self) -> &MoveList {
-        &self.engine.legal_moves
+    pub fn legal_moves(&self) -> MoveList {
+        let pos = self.engine.pos();
+        pos.legal_moves()
     }
 
     pub fn position(&self) -> &Position {
-        &self.engine.pos
+        &self.engine.pos()
     }
 
-    pub fn position_mut(&mut self) -> &mut Position {
-        &mut self.engine.pos
-    }
+    // pub fn best_move(&self) -> Option<Move> {
+    //     self.engine.best_move
+    // }
 
-    pub fn best_move(&self) -> Option<Move> {
-        self.engine.best_move
-    }
+    // pub fn best_move_score(&self) -> Score {
+    //     self.engine.best_move_score
+    // }
 
-    pub fn best_move_score(&self) -> Score {
-        self.engine.best_move_score
-    }
+    // pub fn static_eval(&self) -> Score {
+    //     self.engine.static_evaluation_score
+    // }
 
-    pub fn static_eval(&self) -> Score {
-        self.engine.static_evaluation_score
-    }
+    // pub fn search_time(&self) -> Duration {
+    //     self.engine.search_time
+    // }
 
-    pub fn search_time(&self) -> Duration {
-        self.engine.search_time
-    }
-
-    pub fn search_depth(&self) -> u8 {
-        self.engine.search_depth
-    }
+    // pub fn search_depth(&self) -> u8 {
+    //     self.engine.search_depth
+    // }
 
     pub fn is_legal_origin(&self, from: Square) -> bool {
         self.legal_moves().iter().any(|mv| mv.from() == from)
@@ -320,11 +173,11 @@ impl Model {
         }
     }
 
-    pub fn best_move_to_uci(&self) -> String {
-        self.best_move()
-            .map(|mv| mv.to_uci())
-            .unwrap_or("None".into())
-    }
+    // pub fn best_move_to_uci(&self) -> String {
+    //     self.best_move()
+    //         .map(|mv| mv.to_uci())
+    //         .unwrap_or("None".into())
+    // }
 
     pub fn partial_move_to_string(&self) -> String {
         self.partial_move.iter().collect()
@@ -373,40 +226,40 @@ impl Model {
         &mut self.log_state
     }
 
-    pub fn make_move(&mut self, raw_uci: &str) {
-        let Some(applied_move) = self.engine.make_move(raw_uci) else {
-            return;
-        };
+    // pub fn make_move(&mut self, raw_uci: &str) {
+    //     let Some(applied_move) = self.engine.make_move(raw_uci) else {
+    //         return;
+    //     };
 
-        self.move_history.push(applied_move);
-        self.partial_move.clear();
+    //     self.move_history.push(applied_move);
+    //     self.partial_move.clear();
 
-        self.info_log(format!("applied move [{raw_uci}]"));
-    }
+    //     self.info_log(format!("applied move [{raw_uci}]"));
+    // }
 
-    pub fn undo_move(&mut self) {
-        if !self.engine.undo_move() {
-            return;
-        }
+    // pub fn undo_move(&mut self) {
+    //     if !self.engine.undo_move() {
+    //         return;
+    //     }
 
-        let unmade_move = self
-            .move_history
-            .pop()
-            .expect("move history is not empty")
-            .to_uci();
+    //     let unmade_move = self
+    //         .move_history
+    //         .pop()
+    //         .expect("move history is not empty")
+    //         .to_uci();
 
-        self.info_log(format!("reversed the move {unmade_move}"));
-    }
+    //     self.info_log(format!("reversed the move {unmade_move}"));
+    // }
 
-    pub fn init_search(&mut self) {
-        self.engine.init_search();
-    }
+    // pub fn init_search(&mut self) {
+    //     self.engine.init_search();
+    // }
 
-    pub fn play_best_move(&mut self) {
-        if let Some(best_move) = self.engine.best_move.map(|mv| mv.to_uci()).take() {
-            self.make_move(&best_move);
-        }
-    }
+    // pub fn play_best_move(&mut self) {
+    //     if let Some(best_move) = self.engine.best_move.map(|mv| mv.to_uci()).take() {
+    //         self.make_move(&best_move);
+    //     }
+    // }
 
     pub fn quit(&mut self) {
         self.exit = true
@@ -451,16 +304,16 @@ impl Model {
         }
     }
 
-    pub fn set_search_depth(&mut self, depth: u8) {
-        self.engine.search_depth = depth;
-    }
+    // pub fn set_search_depth(&mut self, depth: u8) {
+    //     self.engine.search_depth = depth;
+    // }
 
-    pub fn confirm_action(&mut self) {
-        match self.focus {
-            FocusMode::MoveInput => self.make_move(&self.partial_move_to_string()),
-            FocusMode::FenInput => self.apply_fen(),
-        }
-    }
+    // pub fn confirm_action(&mut self) {
+    //     match self.focus {
+    //         FocusMode::MoveInput => self.make_move(&self.partial_move_to_string()),
+    //         FocusMode::FenInput => self.apply_fen(),
+    //     }
+    // }
 
     pub fn info_log(&mut self, log: String) {
         self.logs.push_back(format!("{log}"));
@@ -483,23 +336,23 @@ impl Model {
         };
     }
 
-    fn apply_fen(&mut self) {
-        let raw_fen = self.partial_fen_to_string();
-        let maybe_fen = Fen::new(&raw_fen);
+    // fn apply_fen(&mut self) {
+    //     let raw_fen = self.partial_fen_to_string();
+    //     let maybe_fen = Fen::new(&raw_fen);
 
-        match maybe_fen {
-            Err(e) => self.info_log(e.to_string()),
-            Ok(fen_struct) => match fen_struct.try_into_position() {
-                Ok(pos) => {
-                    self.engine.apply_fen(pos);
-                    self.partial_move.clear();
-                    self.partial_fen.clear();
-                    self.move_history.clear();
-                }
-                Err(e) => {
-                    self.info_log(e.to_string());
-                }
-            },
-        }
-    }
+    //     match maybe_fen {
+    //         Err(e) => self.info_log(e.to_string()),
+    //         Ok(fen_struct) => match fen_struct.try_into_position() {
+    //             Ok(pos) => {
+    //                 self.engine.apply_fen(pos);
+    //                 self.partial_move.clear();
+    //                 self.partial_fen.clear();
+    //                 self.move_history.clear();
+    //             }
+    //             Err(e) => {
+    //                 self.info_log(e.to_string());
+    //             }
+    //         },
+    //     }
+    // }
 }

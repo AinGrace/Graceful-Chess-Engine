@@ -24,7 +24,7 @@ pub(crate) mod constants {
     ///A pawn advanced to the 6th rank is often more valuable than one on the 2nd rank.
     ///
     ///These values are part of the evaluation score
-    pub const PAWN_PST: [i32; 64] = [
+    pub const PAWN_PST: [i16; 64] = [
         0,   0,  0,  0,  0,  0,  0,  0,
         50, 50, 50, 50, 50, 50, 50, 50,
         10, 10, 20, 30, 30, 20, 10, 10,
@@ -36,7 +36,7 @@ pub(crate) mod constants {
     ];
 
 
-    pub const KNIGHT_PST: [i32; 64] = [
+    pub const KNIGHT_PST: [i16; 64] = [
        -50,-40,-30,-30,-30,-30,-40,-50,
        -40,-20,  0,  0,  0,  0,-20,-40,
        -30,  0, 10, 15, 15, 10,  0,-30,
@@ -48,7 +48,7 @@ pub(crate) mod constants {
     ];
 
 
-    pub const BISHOP_PST: [i32; 64] = [
+    pub const BISHOP_PST: [i16; 64] = [
        -20,-10,-10,-10,-10,-10,-10,-20,
        -10,  0,  0,  0,  0,  0,  0,-10,
        -10,  0,  5, 10, 10,  5,  0,-10,
@@ -60,7 +60,7 @@ pub(crate) mod constants {
     ];
 
 
-    pub const ROOK_PST: [i32; 64] = [
+    pub const ROOK_PST: [i16; 64] = [
         0,  0,  0,  0,  0,  0,  0,  0,
         5,  0,  0,  0,  0,  0,  0, -5,
        -5,  0,  0,  0,  0,  0,  0, -5,
@@ -72,7 +72,7 @@ pub(crate) mod constants {
     ];
 
 
-    pub const QUEEN_PST: [i32; 64] = [
+    pub const QUEEN_PST: [i16; 64] = [
         -20,-10,-10, -5, -5,-10,-10,-20,
         -10,  0,  0,  0,  0,  0,  0,-10,
         -10,  0,  5,  5,  5,  5,  0,-10,
@@ -84,7 +84,7 @@ pub(crate) mod constants {
     ];
 
 
-    pub const KING_MIDDLE_GAME_PST: [i32; 64] = [
+    pub const KING_MIDDLE_GAME_PST: [i16; 64] = [
         -30,-40,-40,-50,-50,-40,-40,-30,
         -30,-40,-40,-50,-50,-40,-40,-30,
         -30,-40,-40,-50,-50,-40,-40,-30,
@@ -96,7 +96,7 @@ pub(crate) mod constants {
     ];
 
     // TODO
-    pub const KING_END_GAME_PST: [i32; 64] = [
+    pub const KING_END_GAME_PST: [i16; 64] = [
         -50,-40,-30,-20,-20,-30,-40,-50,
         -30,-20,-10,  0,  0,-10,-20,-30,
         -30,-10, 20, 30, 30, 20,-10,-30,
@@ -110,17 +110,17 @@ pub(crate) mod constants {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Score {
-    Centipawn(i32),
-    Mate(i16),
+    Centipawn(i16),
+    Mate(i8),
     Draw,
     Abort,
 }
 
 impl Score {
-    pub fn value(self) -> i32 {
+    pub fn value(self) -> i16 {
         match self {
-            Score::Mate(val) if val > 0 => 100_000 - val as i32,
-            Score::Mate(val) => -100_000 - val as i32,
+            Score::Mate(val) if val > 0 => 10_000 - val as i16,
+            Score::Mate(val) => -10_000 - val as i16,
             Score::Centipawn(val) => val,
             Score::Draw => 0,
             Score::Abort => 0,
@@ -206,14 +206,14 @@ pub fn incremental_eval(_pos: &Position, _score: i32) -> i32 {
     todo!()
 }
 
-fn mobility(_pos: &Position) -> i32 {
+fn mobility(_pos: &Position) -> i16 {
     // TODO: good mobility algorithm requires ChessBoard::legal_moves()
     // to be able to generate moves for both sides
     // not only for side to move
     0
 }
 
-fn material_score(pos: &Position) -> i32 {
+fn material_score(pos: &Position) -> i16 {
     let white = Color::White;
     let black = Color::Black;
 
@@ -229,10 +229,10 @@ fn material_score(pos: &Position) -> i32 {
         + pos.board().rooks(black).popcnt() * ROOK_VALUE
         + pos.board().queens(black).popcnt() * QUEEN_VALUE;
 
-    (white_score as i32) - (black_score as i32)
+    (white_score as i16) - (black_score as i16)
 }
 
-fn calculate_pst_score(pos: &Position) -> i32 {
+fn calculate_pst_score(pos: &Position) -> i16 {
     let white = Color::White;
     let black = Color::Black;
     let board = pos.board();
@@ -292,7 +292,7 @@ fn calculate_pst_score(pos: &Position) -> i32 {
     score
 }
 
-fn calculate_piece_pst(table: &[i32; 64], square: Square, side: Color) -> i32 {
+fn calculate_piece_pst(table: &[i16; 64], square: Square, side: Color) -> i16 {
     match side {
         Color::White => table[square.mirror_vertical().as_usize()],
         Color::Black => -table[square.as_usize()],

@@ -23,28 +23,28 @@ mod update;
 fn main() -> color_eyre::Result<()> {
     color_eyre::install()?;
     stdout().execute(event::EnableMouseCapture)?;
-    ratatui::run(|term| app(term))?;
+    // ratatui::run(|term| app(term))?;
 
     Ok(())
 }
 
-fn app(terminal: &mut DefaultTerminal) -> color_eyre::Result<()> {
-    let mut model = Model::new();
+// fn app(terminal: &mut DefaultTerminal) -> color_eyre::Result<()> {
+//     let mut model = Model::new();
 
-    while !model.should_exit() {
-        assert_size(terminal.size()?)?;
-        let _completed_frame = terminal.draw(|f| ui::global_render(f, &mut model))?;
+//     while !model.should_exit() {
+//         assert_size(terminal.size()?)?;
+//         let _completed_frame = terminal.draw(|f| ui::global_render(f, &mut model))?;
 
-        let message = update::handle_event()?;
+//         let message = update::handle_event()?;
 
-        match message {
-            Some(msg) => update::update(&mut model, msg),
-            None => continue,
-        }
-    }
+//         match message {
+//             Some(msg) => update::update(&mut model, msg),
+//             None => continue,
+//         }
+//     }
 
-    Ok(())
-}
+//     Ok(())
+// }
 
 fn assert_size(size: ratatui::prelude::Size) -> color_eyre::Result<()> {
     if size.height < 30 {

@@ -469,7 +469,7 @@ impl App {
             "-repeat".into(),
             "-concurrency".into(),
             self.config.test.concurrency.to_string(),
-            "-recover".into(),
+            // "-recover".into(),
             "-pgnout".into(),
             format!("file={}", pgn.display().to_string()),
         ]);
