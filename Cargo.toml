@@ -5,7 +5,6 @@ members = [
    "lookup",
    "position",
    "engine",
-   "tui",
    "uci",
    "bench"
 ]
