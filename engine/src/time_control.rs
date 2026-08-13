@@ -39,7 +39,7 @@ impl TimeControl {
             };
         }
 
-        let move_count = 50u32.saturating_sub(pos.half_moves() / 2).max(15);
+        let move_count = 50u32.saturating_sub(pos.half_moves() / 2).max(10);
 
         let base = (total_allocation / move_count) as u64;
         let soft_limit = Duration::from_millis(base + increment as u64 * 3 / 4);

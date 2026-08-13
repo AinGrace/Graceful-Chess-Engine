@@ -175,6 +175,7 @@ fn should_extend(prev_score: &Score, cur_score: &Score, best_move_changed: bool)
 
     factor
 }
+
 fn negamax(
     pos: &mut Position,
     depth: u8,
@@ -207,7 +208,7 @@ fn negamax(
     {
         match tt_opts {
             TTOptions::Enabled(tt) => {
-                let tt = tt.lock().expect("FATAL");
+                let tt = tt.lock();
 
                 if let Some(entry) = tt.get(pos.zobrist_hash(), depth)
                     && entry.hash == pos.zobrist_hash()
@@ -297,7 +298,7 @@ fn negamax(
     {
         match tt_opts {
             TTOptions::Enabled(tt) => {
-                let mut tt = tt.lock().expect("FATAL");
+                let mut tt = tt.lock();
 
                 tt.insert(
                     pos.zobrist_hash(),

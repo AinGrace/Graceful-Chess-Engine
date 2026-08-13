@@ -1,5 +1,6 @@
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
+use parking_lot::Mutex;
 use types::chess_move::Move;
 
 use crate::{eval::Score, search::Bound};

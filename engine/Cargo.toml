@@ -6,3 +6,4 @@ edition = "2024"
 [dependencies]
 types = { path = "../types"}
 position = { path = "../position"}
+parking_lot = "0.12.5"
