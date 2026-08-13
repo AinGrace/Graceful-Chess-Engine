@@ -172,7 +172,11 @@ impl Position {
 
     /// Generate and return a list of legal moves for the curent position
     pub fn legal_moves(&self) -> MoveList {
-        move_gen::gen_legal_moves(self)
+        move_gen::gen_legal_moves_for(self, self.turn())
+    }
+
+    pub fn legal_moves_for(&self, us: Color) -> MoveList {
+        move_gen::gen_legal_moves_for(self, us)
     }
 
     #[inline(always)]
@@ -475,7 +479,7 @@ impl Position {
         mem::take(self);
     }
 
-    pub fn into_fen(&self) -> Fen {
+    pub fn to_fen(&self) -> Fen {
         Fen {
             board: self.board.clone(),
             turn: self.turn,
@@ -820,7 +824,7 @@ mod tests {
         let mut board = Position::new();
 
         let initial_hash = board.zobrist_hash();
-        let initial_fen = board.into_fen();
+        let initial_fen = board.to_fen();
 
         let mv = Move::quiet(Role::Pawn, Square::E2, Square::E4);
 
@@ -831,7 +835,7 @@ mod tests {
         board.undo_move(undo);
 
         assert_eq!(board.zobrist_hash(), initial_hash);
-        assert_eq!(board.into_fen(), initial_fen);
+        assert_eq!(board.to_fen(), initial_fen);
     }
 
     #[test]

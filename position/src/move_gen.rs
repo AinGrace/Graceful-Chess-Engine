@@ -13,34 +13,39 @@ use types::{
     square::Square,
 };
 
-use crate::{position::Position, move_gen::pin_info::PinInfo};
+use crate::{move_gen::pin_info::PinInfo, position::Position};
 
-pub fn gen_legal_moves(pos: &Position) -> MoveList {
+pub fn gen_legal_moves_for(pos: &Position, us: Color) -> MoveList {
     let mut moves = MoveList::new();
-    let king_checkers = pos.checkers_to(pos.turn());
-    let king_sqr = pos.board().the_king(pos.turn());
+    let king_checkers = pos.checkers_to(us);
+    let king_sqr = pos.board().the_king(us);
 
-    let pin_info = PinInfo::compute(pos);
+    let pin_info = PinInfo::compute(pos, us);
 
     if king_checkers.empty() {
-        gen_quiet_and_captures(pos, &pin_info, &mut moves);
-        gen_castling_moves(pos, &mut moves);
-        gen_ep_moves(pos, &mut moves);
+        gen_quiet_and_captures(pos, us, &pin_info, &mut moves);
+        gen_castling_moves(pos, us, &mut moves);
+        gen_ep_moves(pos, us, &mut moves);
     } else if king_checkers.popcnt() == 2 {
-        gen_king_moves(pos, king_sqr, &mut moves);
+        gen_king_moves(pos, us, king_sqr, &mut moves);
     } else {
-        gen_evasions(pos, king_sqr, king_checkers, pin_info.pinned(), &mut moves);
+        gen_evasions(
+            pos,
+            us,
+            king_sqr,
+            king_checkers,
+            pin_info.pinned(),
+            &mut moves,
+        );
     }
 
     moves
 }
 
-fn gen_quiet_and_captures(pos: &Position, pin_info: &PinInfo, moves: &mut MoveList) {
-    let us = pos.turn();
-
+fn gen_quiet_and_captures(pos: &Position, us: Color, pin_info: &PinInfo, moves: &mut MoveList) {
     let board = pos.board();
 
-    gen_king_moves(pos, board.the_king(us), moves);
+    gen_king_moves(pos, us, board.the_king(us), moves);
 
     let pawns = board.pawns(us);
     let knights = board.knights(us);
@@ -238,7 +243,7 @@ fn gen_pinned_quiet_and_capture_moves(
 #[allow(clippy::too_many_arguments)]
 fn gen_unpinned_quiet_and_capture_moves(
     pos: &Position,
-    side: Color,
+    us: Color,
     pawns: Bitboard,
     knights: Bitboard,
     bishops: Bitboard,
@@ -246,12 +251,12 @@ fn gen_unpinned_quiet_and_capture_moves(
     queens: Bitboard,
     moves: &mut MoveList,
 ) {
-    let friendly = pos.board().by_color(side);
-    let enemy = pos.board().by_color(!side);
+    let friendly = pos.board().by_color(us);
+    let enemy = pos.board().by_color(!us);
     let occupied = pos.board().occupied();
     let empty = !occupied;
 
-    let (push_dir, cap_left_dir, cap_right_dir, double_push_rank, prom_rank) = match pos.turn() {
+    let (push_dir, cap_left_dir, cap_right_dir, double_push_rank, prom_rank) = match us {
         Color::White => (
             Direction::North,
             Direction::NorthWest,
@@ -474,16 +479,15 @@ fn gen_unpinned_quiet_and_capture_moves(
     });
 }
 
-fn gen_castling_moves(pos: &Position, moves: &mut MoveList) {
-    let our = pos.turn();
-    let enemy = !our;
+fn gen_castling_moves(pos: &Position, us: Color, moves: &mut MoveList) {
+    let enemy = !us;
     let board = pos.board();
 
-    let king_sqr = board.the_king(our);
+    let king_sqr = board.the_king(us);
 
     let occupied = board.occupied();
 
-    if pos.castling_rights().short(our) {
+    if pos.castling_rights().short(us) {
         let f = Square::from_u32_checked(king_sqr.as_u32() + 1);
         let g = Square::from_u32_checked(king_sqr.as_u32() + 2);
         let rook = Square::from_u32_checked(king_sqr.as_u32() + 3);
@@ -501,7 +505,7 @@ fn gen_castling_moves(pos: &Position, moves: &mut MoveList) {
         }
     }
 
-    if pos.castling_rights().long(our) {
+    if pos.castling_rights().long(us) {
         let d = Square::from_u32_checked(king_sqr.as_u32() - 1);
         let c = Square::from_u32_checked(king_sqr.as_u32() - 2);
         let b = Square::from_u32_checked(king_sqr.as_u32() - 3);
@@ -521,22 +525,21 @@ fn gen_castling_moves(pos: &Position, moves: &mut MoveList) {
     }
 }
 
-pub fn gen_ep_moves(pos: &Position, moves: &mut MoveList) {
+pub fn gen_ep_moves(pos: &Position, us: Color, moves: &mut MoveList) {
     let Some(ep) = pos.ep_square() else {
         return;
     };
 
-    let our = pos.turn();
-    let enemy = !our;
-    let king_sqr = pos.board().the_king(our);
-    let pawns = pos.board().pawns(our);
+    let enemy = !us;
+    let king_sqr = pos.board().the_king(us);
+    let pawns = pos.board().pawns(us);
 
     let enemy_rooks = pos.board().rooks(enemy);
     let enemy_bishops = pos.board().bishops(enemy);
     let enemy_queens = pos.board().queens(enemy);
 
     pawns.for_each(|from| {
-        if lookup::pawn_attacks(our, from) & (1 << ep.as_u32()) == 0 {
+        if lookup::pawn_attacks(us, from) & (1 << ep.as_u32()) == 0 {
             return;
         }
 
@@ -576,12 +579,13 @@ pub fn gen_ep_moves(pos: &Position, moves: &mut MoveList) {
 
 fn gen_evasions(
     pos: &Position,
+    us: Color,
     king_sqr: Square,
     checker: Bitboard,
     pinned: Bitboard,
     moves: &mut MoveList,
 ) {
-    gen_king_moves(pos, king_sqr, moves);
+    gen_king_moves(pos, us, king_sqr, moves);
 
     // although we already know the existence of checker due to call site
     // let-else is more performant than panicking alternative
@@ -591,14 +595,13 @@ fn gen_evasions(
 
     let evasion_mask = lookup::ray_between(king_sqr, checker).to_bb();
 
-    gen_blocking_moves(pos, evasion_mask, checker, pinned, moves);
-    gen_ep_evasions(pos, checker, pinned, moves);
+    gen_blocking_moves(pos, us, evasion_mask, checker, pinned, moves);
+    gen_ep_evasions(pos, us, checker, pinned, moves);
 }
 
 // NOTE consider calculating via enemy piece attack maps in order to avoid branches
-fn gen_king_moves(pos: &Position, king_sqr: Square, moves: &mut MoveList) {
+fn gen_king_moves(pos: &Position, us: Color, king_sqr: Square, moves: &mut MoveList) {
     let board = pos.board();
-    let us = pos.turn();
 
     let friendly = board.by_color(us);
     let enemy = board.by_color(!us);
@@ -607,14 +610,14 @@ fn gen_king_moves(pos: &Position, king_sqr: Square, moves: &mut MoveList) {
 
     let quiet = attacks & !friendly & !enemy;
     quiet.for_each(|to| {
-        if king_move_is_safe(pos, king_sqr, to) {
+        if king_move_is_safe(pos, us, king_sqr, to) {
             moves.push(Move::quiet(Role::King, king_sqr, to));
         }
     });
 
     let captures = attacks & enemy;
     captures.for_each(|to| {
-        if king_move_is_safe(pos, king_sqr, to) {
+        if king_move_is_safe(pos, us, king_sqr, to) {
             moves.push(Move::capture(
                 Role::King,
                 king_sqr,
@@ -627,27 +630,27 @@ fn gen_king_moves(pos: &Position, king_sqr: Square, moves: &mut MoveList) {
 
 fn gen_blocking_moves(
     pos: &Position,
+    us: Color,
     evasion_mask: Bitboard,
     checker: Square,
     pinned: Bitboard,
     moves: &mut MoveList,
 ) {
-    let our = pos.turn();
     let board = pos.board();
     let occupied = board.occupied();
 
-    let rooks = board.rooks(our) & !pinned;
-    let bishops = board.bishops(our) & !pinned;
-    let queens = board.queens(our) & !pinned;
-    let knights = board.knights(our) & !pinned;
-    let pawns = board.pawns(our) & !pinned;
+    let rooks = board.rooks(us) & !pinned;
+    let bishops = board.bishops(us) & !pinned;
+    let queens = board.queens(us) & !pinned;
+    let knights = board.knights(us) & !pinned;
+    let pawns = board.pawns(us) & !pinned;
 
     let capture_mask = checker.to_bb();
 
     let checker_role = pos.board().peek_role_checked(checker);
 
     pawns.for_each(|pawn| {
-        let pawn_pushes = lookup::pawn_pushes(our, pawn).to_bb() & evasion_mask;
+        let pawn_pushes = lookup::pawn_pushes(us, pawn).to_bb() & evasion_mask;
         pawn_pushes.for_each(|push| {
             let promotion_rank = push.rank() == Rank::First || push.rank() == Rank::Eighth;
             if promotion_rank {
@@ -659,9 +662,9 @@ fn gen_blocking_moves(
             }
         });
 
-        let pawn_double_pushes = lookup::pawn_double_pushes(our, pawn).to_bb() & evasion_mask;
+        let pawn_double_pushes = lookup::pawn_double_pushes(us, pawn).to_bb() & evasion_mask;
         pawn_double_pushes.for_each(|push| {
-            if occupied.is_square_set(push.offset_checked(if our == Color::White { -8 } else { 8 }))
+            if occupied.is_square_set(push.offset_checked(if us == Color::White { -8 } else { 8 }))
             {
                 return;
             }
@@ -669,7 +672,7 @@ fn gen_blocking_moves(
             moves.push(Move::quiet(Role::Pawn, pawn, push));
         });
 
-        let pawn_attacks = lookup::pawn_attacks(our, pawn).to_bb() & checker.to_bb();
+        let pawn_attacks = lookup::pawn_attacks(us, pawn).to_bb() & checker.to_bb();
         pawn_attacks.for_each(|_| {
             let promotion_rank = checker.rank() == Rank::First || checker.rank() == Rank::Eighth;
 
@@ -723,14 +726,20 @@ fn gen_blocking_moves(
     });
 }
 
-fn gen_ep_evasions(pos: &Position, checker: Square, pinned: Bitboard, moves: &mut MoveList) {
+fn gen_ep_evasions(
+    pos: &Position,
+    us: Color,
+    checker: Square,
+    pinned: Bitboard,
+    moves: &mut MoveList,
+) {
     let Some(ep_sqr) = pos.ep_square() else {
         return;
     };
 
     let target_pawn = Square::of(
         ep_sqr.file(),
-        if pos.turn() == Color::White {
+        if us == Color::White {
             Rank::Fifth
         } else {
             Rank::Fourth
@@ -741,15 +750,15 @@ fn gen_ep_evasions(pos: &Position, checker: Square, pinned: Bitboard, moves: &mu
         return;
     }
 
-    let pawns = pos.board().pawns(pos.turn()) & lookup::pawn_attacks(!pos.turn(), ep_sqr).to_bb();
-    let king_sqr = pos.board().the_king(pos.turn());
+    let pawns = pos.board().pawns(us) & lookup::pawn_attacks(!us, ep_sqr).to_bb();
+    let king_sqr = pos.board().the_king(us);
 
     pawns.for_each(|pawn| {
         if pinned.is_square_set(pawn) {
             return;
         }
 
-        let enemy_sliders = pos.board().rooks(!pos.turn()) | pos.board().queens(!pos.turn());
+        let enemy_sliders = pos.board().rooks(!us) | pos.board().queens(!us);
 
         let legal = if enemy_sliders.empty() {
             true
@@ -773,9 +782,8 @@ fn gen_ep_evasions(pos: &Position, checker: Square, pinned: Bitboard, moves: &mu
     });
 }
 
-fn king_move_is_safe(pos: &Position, from: Square, to: Square) -> bool {
-    let our = pos.turn();
-    let enemy = !our;
+fn king_move_is_safe(pos: &Position, us: Color, from: Square, to: Square) -> bool {
+    let enemy = !us;
     let board = pos.board();
 
     let occupied = pos.board().occupied().clear_square(from).set_square(to);
@@ -787,7 +795,7 @@ fn king_move_is_safe(pos: &Position, from: Square, to: Square) -> bool {
     let rooks = board.rooks(enemy) | queens;
     let king = board.king(enemy);
 
-    (lookup::pawn_attacks(our, to).to_bb() & pawns).empty()
+    (lookup::pawn_attacks(us, to).to_bb() & pawns).empty()
         && (lookup::knight_attacks(to).to_bb() & knights).empty()
         && (lookup::bishop_attacks(to, occupied.as_u64()).to_bb() & bishops).empty()
         && (lookup::rook_attacks(to, occupied.as_u64()).to_bb() & rooks).empty()
@@ -799,6 +807,7 @@ mod pin_info {
 
     use types::{
         bitboard::{Bitboard, ToBitboard},
+        color::Color,
         square::Square,
     };
 
@@ -837,8 +846,7 @@ mod pin_info {
             self.pinned_pieces
         }
 
-        pub fn compute(pos: &Position) -> Self {
-            let us = pos.turn();
+        pub fn compute(pos: &Position, us: Color) -> Self {
             let them = !us;
 
             let board = pos.board();

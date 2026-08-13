@@ -106,7 +106,7 @@ pub fn search<F>(
         search_depth,
         tt_opts,
         stop_thinking: stop_flag,
-        time_control,
+        mut time_control,
     }: SearchOptions,
     mut f: F,
 ) -> SearchResult
@@ -134,6 +134,14 @@ where
             &mut 0,
         );
 
+        let factor = should_extend(
+            &result.score,
+            &current_result.score,
+            result.best_move != current_result.best_move,
+        );
+
+        time_control.increase_soft(time_control.soft_limit.mul_f64(factor));
+
         if current_result.is_aborted() {
             return result;
         }
@@ -154,6 +162,19 @@ where
     result
 }
 
+fn should_extend(prev_score: &Score, cur_score: &Score, best_move_changed: bool) -> f64 {
+    let mut factor = 1.0;
+
+    if *cur_score < *prev_score - 30 {
+        factor *= 1.3;
+    }
+
+    if best_move_changed {
+        factor *= 1.25;
+    }
+
+    factor
+}
 fn negamax(
     pos: &mut Position,
     depth: u8,

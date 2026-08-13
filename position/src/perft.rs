@@ -4,8 +4,6 @@ use types::{MoveList, chess_move::Move, role::Role, square::Square};
 
 use crate::{fen::Fen, position::Position};
 
-// TODO: apply undo
-
 #[test]
 #[ignore = "to be onvoked manually for debugging"]
 fn perft_comparing() {

@@ -1,4 +1,7 @@
-use std::{fmt::Display, ops::Neg};
+use std::{
+    fmt::Display,
+    ops::{Neg, Not, Sub},
+};
 
 use position::position::Position;
 use types::{color::Color, square::Square};
@@ -161,6 +164,22 @@ impl Neg for Score {
     }
 }
 
+impl Sub for Score {
+    type Output = Self;
+
+    fn sub(self, rhs: Self) -> Self::Output {
+        Self::Centipawn(self.value() - rhs.value())
+    }
+}
+
+impl Sub<i16> for Score {
+    type Output = Self;
+
+    fn sub(self, rhs: i16) -> Self::Output {
+        Self::Centipawn(self.value() - rhs)
+    }
+}
+
 impl Display for Score {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
@@ -206,11 +225,11 @@ pub fn incremental_eval(_pos: &Position, _score: i32) -> i32 {
     todo!()
 }
 
-fn mobility(_pos: &Position) -> i16 {
-    // TODO: good mobility algorithm requires ChessBoard::legal_moves()
-    // to be able to generate moves for both sides
-    // not only for side to move
-    0
+fn mobility(pos: &Position) -> i16 {
+    let us = pos.legal_moves_for(pos.turn());
+    let them = pos.legal_moves_for(!pos.turn());
+
+    (us.len() - them.len()) as i16
 }
 
 fn material_score(pos: &Position) -> i16 {

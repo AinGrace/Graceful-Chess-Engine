@@ -1,8 +1,10 @@
 use std::{
     fmt::{self, Display},
+    ops::Mul,
     time::{Duration, Instant},
 };
 
+use position::position::Position;
 use types::color::Color;
 
 #[derive(Debug)]
@@ -11,13 +13,13 @@ pub struct TimeControl {
     pub soft_limit: Duration,
     pub hard_limit: Duration,
 
-    pub total_allocation: u32, // minutes
+    pub total_allocation: u32, // millis
     pub increment: u32,
 }
 
 impl TimeControl {
-    pub fn new(kind: TimeControlKind, us: Color) -> Self {
-        let (total_allocation, increment) = match (&kind, us) {
+    pub fn new(kind: TimeControlKind, pos: &Position) -> Self {
+        let (total_allocation, increment) = match (&kind, pos.turn()) {
             (TimeControlKind::Infinite, _) => (u32::MAX, u32::MAX),
 
             (TimeControlKind::SuddenDeath { w_time, .. }, Color::White) => (*w_time, 0),
@@ -37,16 +39,23 @@ impl TimeControl {
             };
         }
 
-        let soft_limit = Duration::from_millis((total_allocation / 30 + increment / 2) as u64);
-        let hard_limit = soft_limit.mul_f32(1.4);
+        let move_count = 50u32.saturating_sub(pos.half_moves() / 2).max(15);
 
-        Self {
+        let base = (total_allocation / move_count) as u64;
+        let soft_limit = Duration::from_millis(base + increment as u64 * 3 / 4);
+        let hard_limit = Duration::from_millis(
+            (total_allocation as u64 / 4).min(soft_limit.as_millis() as u64 * 4),
+        );
+
+        let res = Self {
             started: Instant::now(),
             soft_limit,
             hard_limit,
             total_allocation,
             increment,
-        }
+        };
+
+        res
     }
 
     pub fn soft_expired(&self) -> bool {

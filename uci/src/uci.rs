@@ -47,8 +47,7 @@ impl<W: Write + Send, R: BufRead> Uci<W, R> {
         loop {
             match uci_io::read_uci_command(&mut self.reader) {
                 Ok(Some(cmd)) => {
-                    let res = self.apply_command(cmd);
-                    if res == ControlFlow::Break(()) {
+                    if self.apply_command(cmd) == ControlFlow::Break(()) {
                         break;
                     }
                 }
@@ -140,7 +139,7 @@ impl<W: Write + Send, R: BufRead> Uci<W, R> {
 
         self.engine.search(
             depth,
-            TimeControl::new(time_control_kind.into(), self.engine.pos().turn()),
+            TimeControl::new(time_control_kind.into(), self.engine.pos()),
             move |res| {
                 let mut writer = intermediate_writer.lock().expect("FATAL");
                 Self::send(
