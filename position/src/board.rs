@@ -196,6 +196,55 @@ impl Board {
     }
 
     #[inline(always)]
+    //TODO: consider pinned pieces and checks
+    pub fn lva_to(
+        &self,
+        sqr: Square,
+        us: Color,
+    ) -> Option<Square> {
+        let occupied = self.occupied();
+
+        let pawn = self.pawns(us) & lookup::pawn_attacks(!us, sqr).to_bb();
+
+        if let Some(pawn) = pawn.first_square() {
+            return Some(pawn);
+        }
+
+        let knight = self.knights(us) & lookup::knight_attacks(sqr).to_bb();
+
+        if let Some(knight) = knight.first_square() {
+            return Some(knight);
+        }
+
+        let bishop =
+            self.bishops(us) & lookup::bishop_attacks(sqr, occupied.as_u64()).to_bb();
+
+        if let Some(bishop) = bishop.first_square() {
+            return Some(bishop);
+        }
+
+        let rook = self.rooks(us) & lookup::rook_attacks(sqr, occupied.as_u64()).to_bb();
+
+        if let Some(rook) = rook.first_square() {
+            return Some(rook);
+        }
+
+        let queen = self.queens(us) & lookup::queen_attacks(sqr, occupied.as_u64()).to_bb();
+
+        if let Some(queen) = queen.first_square() {
+            return Some(queen);
+        }
+
+        let king = self.king(us) & lookup::king_attacks(sqr).to_bb();
+
+        if let Some(king) = king.first_square() {
+            return Some(king);
+        }
+
+        None
+    }
+
+    #[inline(always)]
     pub fn sliding_attacks_to(&self, sqr: Square, opponent: Color) -> Bitboard {
         let occupied = self.occupied();
 
@@ -261,6 +310,7 @@ impl Board {
     #[inline(always)]
     pub fn discard_piece_at_checked(&mut self, square: Square) {
         let piece = self.peek_checked(square);
+
         let role_bb = self.by_role.get_mut(piece.role());
         let color_bb = self.by_color.get_mut(piece.color());
 
@@ -270,32 +320,52 @@ impl Board {
         self.occupied = self.occupied.clear_square(square);
     }
 
-    #[inline(always)]
-    pub fn replace_piece_at(&mut self, square: Square, piece: Piece) {
-        self.discard_piece_at(square);
-        self.set_piece_at(piece, square);
-    }
-
-    #[inline(always)]
-    pub fn replace_piece_at_checked(&mut self, square: Square, piece: Piece) {
-        self.discard_piece_at_checked(square);
-        self.set_piece_at(piece, square);
-    }
-
     #[must_use]
     #[inline(always)]
-    pub fn remove_piece_at(&mut self, square: Square) -> Option<Piece> {
+    pub fn take_piece_at(&mut self, square: Square) -> Option<Piece> {
         let piece = self.peek(square)?;
 
         let role_bb = self.by_role.get_mut(piece.role());
-        *role_bb = role_bb.clear_square(square);
-
         let color_bb = self.by_color.get_mut(piece.color());
+
+        *role_bb = role_bb.clear_square(square);
         *color_bb = color_bb.clear_square(square);
 
         self.occupied = self.occupied.clear_square(square);
 
         Some(piece)
+    }
+
+    #[must_use]
+    #[inline(always)]
+    pub fn take_piece_at_checked(&mut self, square: Square) -> Piece {
+        let piece = self.peek_checked(square);
+
+        let role_bb = self.by_role.get_mut(piece.role());
+        let color_bb = self.by_color.get_mut(piece.color());
+
+        *role_bb = role_bb.clear_square(square);
+        *color_bb = color_bb.clear_square(square);
+
+        self.occupied = self.occupied.clear_square(square);
+
+        piece
+    }
+
+    #[must_use]
+    #[inline(always)]
+    pub fn replace_piece_at(&mut self, piece: Piece, square: Square) -> Option<Piece> {
+        let old_piece = self.take_piece_at(square);
+        self.set_piece_at(piece, square);
+
+        old_piece
+    }
+
+    #[must_use]
+    #[inline(always)]
+    pub fn move_piece_to(&mut self, from: Square, to: Square) -> Option<Piece> {
+        let moving_piece = self.take_piece_at(from)?;
+        self.replace_piece_at(moving_piece, to)
     }
 
     pub fn is_insufficient_material(&self) -> bool {
@@ -826,7 +896,7 @@ mod board_tests {
     fn remove_piece_at_returns_the_piece() {
         let mut board = Board::new_empty();
         board.set_piece_at(Piece::WKnight, Square::G1);
-        let removed = board.remove_piece_at(Square::G1);
+        let removed = board.take_piece_at(Square::G1);
         assert_eq!(removed, Some(Piece::WKnight));
     }
 
@@ -834,7 +904,7 @@ mod board_tests {
     fn remove_piece_at_clears_square() {
         let mut board = Board::new_empty();
         board.set_piece_at(Piece::WKnight, Square::G1);
-        let _ = board.remove_piece_at(Square::G1);
+        let _ = board.take_piece_at(Square::G1);
         assert_eq!(board.peek(Square::G1), None);
         assert!(board.occupied().empty());
     }
@@ -842,7 +912,7 @@ mod board_tests {
     #[test]
     fn remove_piece_at_on_empty_returns_none() {
         let mut board = Board::new_empty();
-        assert_eq!(board.remove_piece_at(Square::E4), None);
+        assert_eq!(board.take_piece_at(Square::E4), None);
     }
 
     #[test]
@@ -850,7 +920,7 @@ mod board_tests {
         let mut board = Board::new_empty();
         board.set_piece_at(Piece::WKing, Square::E1);
         board.set_piece_at(Piece::BKing, Square::E8);
-        let _ = board.remove_piece_at(Square::E1);
+        let _ = board.take_piece_at(Square::E1);
         assert_eq!(board.peek(Square::E8), Some(Piece::BKing));
     }
 
@@ -858,7 +928,7 @@ mod board_tests {
     fn remove_piece_at_clears_role_and_color_bitboards() {
         let mut board = Board::new_empty();
         board.set_piece_at(Piece::BBishop, Square::F8);
-        let _ = board.remove_piece_at(Square::F8);
+        let _ = board.take_piece_at(Square::F8);
         assert!(board.bishops(Color::Black).empty());
         assert!(board.blacks().empty());
     }
@@ -867,7 +937,7 @@ mod board_tests {
     fn replace_piece_at_replaces_with_new_piece() {
         let mut board = Board::new_empty();
         board.set_piece_at(Piece::WPawn, Square::E7);
-        board.replace_piece_at(Square::E7, Piece::WQueen);
+        board.set_piece_at(Piece::WQueen, Square::E7);
         assert_eq!(board.peek(Square::E7), Some(Piece::WQueen));
     }
 
@@ -875,7 +945,7 @@ mod board_tests {
     fn replace_piece_at_clears_old_piece_bitboards() {
         let mut board = Board::new_empty();
         board.set_piece_at(Piece::WPawn, Square::E7);
-        board.replace_piece_at(Square::E7, Piece::WQueen);
+        board.set_piece_at(Piece::WQueen, Square::E7);
         // Old pawn board must be clear
         assert!(!board.pawns(Color::White).is_square_set(Square::E7));
         // New queen board must be set
@@ -887,7 +957,7 @@ mod board_tests {
     fn replace_piece_at_with_different_color() {
         let mut board = Board::new_empty();
         board.set_piece_at(Piece::WRook, Square::A1);
-        board.replace_piece_at(Square::A1, Piece::BRook);
+        board.set_piece_at(Piece::BRook, Square::A1);
         assert_eq!(board.peek(Square::A1), Some(Piece::BRook));
         assert!(board.rooks(Color::White).empty());
         assert!(board.rooks(Color::Black).is_square_set(Square::A1));
@@ -899,7 +969,7 @@ mod board_tests {
     fn replace_piece_at_checked_replaces_piece() {
         let mut board = Board::new_empty();
         board.set_piece_at(Piece::BPawn, Square::A2);
-        board.replace_piece_at_checked(Square::A2, Piece::BQueen);
+        board.set_piece_at(Piece::BQueen, Square::A2);
         assert_eq!(board.peek(Square::A2), Some(Piece::BQueen));
         assert!(!board.pawns(Color::Black).is_square_set(Square::A2));
         assert!(board.queens(Color::Black).is_square_set(Square::A2));
@@ -1042,7 +1112,7 @@ mod board_tests {
     fn occupied_consistent_after_replace() {
         let mut board = Board::new_empty();
         board.set_piece_at(Piece::WPawn, Square::E7);
-        board.replace_piece_at(Square::E7, Piece::WQueen);
+        board.set_piece_at(Piece::WQueen, Square::E7);
         assert_eq!(board.occupied().popcnt(), 1);
         assert!(board.occupied().is_square_set(Square::E7));
     }
@@ -1095,7 +1165,7 @@ mod board_tests {
         board.set_piece_at(Piece::WPawn, Square::E7);
         assert_eq!(board.peek(Square::E7), Some(Piece::WPawn));
 
-        board.replace_piece_at(Square::E7, Piece::WQueen);
+        board.set_piece_at(Piece::WQueen, Square::E7);
         assert_eq!(board.peek(Square::E7), Some(Piece::WQueen));
         assert!(!board.pawns(Color::White).is_square_set(Square::E7));
         assert!(board.queens(Color::White).is_square_set(Square::E7));
@@ -1110,8 +1180,8 @@ mod board_tests {
         assert_eq!(board.occupied().popcnt(), 2);
 
         // White rook captures black pawn
-        let _ = board.remove_piece_at(Square::A8); // remove captured piece
-        let _ = board.remove_piece_at(Square::A1); // move rook
+        let _ = board.take_piece_at(Square::A8); // remove captured piece
+        let _ = board.take_piece_at(Square::A1); // move rook
         board.set_piece_at(Piece::WRook, Square::A8);
 
         assert_eq!(board.peek(Square::A8), Some(Piece::WRook));

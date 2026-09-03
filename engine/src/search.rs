@@ -1,12 +1,13 @@
 use std::{
+    cmp::{max, min},
     sync::{
-        Arc, Mutex,
+        Arc,
         atomic::{AtomicBool, Ordering},
     },
     time::Duration,
 };
 
-use position::position::Position;
+use position::{move_gen, position::Position};
 use types::chess_move::Move;
 
 use crate::{
@@ -134,13 +135,15 @@ where
             &mut 0,
         );
 
-        let factor = should_extend(
-            &result.score,
-            &current_result.score,
-            result.best_move != current_result.best_move,
-        );
+        if time_control.soft_limit != Duration::MAX {
+            let factor = should_extend(
+                &result.score,
+                &current_result.score,
+                result.best_move != current_result.best_move,
+            );
 
-        time_control.increase_soft(time_control.soft_limit.mul_f64(factor));
+            time_control.increase_soft_by_factor(factor);
+        }
 
         if current_result.is_aborted() {
             return result;
@@ -186,14 +189,14 @@ fn negamax(
     time_control: &TimeControl,
     nodes: &mut u64,
 ) -> NegamaxResult {
-    if nodes.trailing_zeros() == 16 {
-        if time_control.hard_expired() {
-            return NegamaxResult::new_abort(*nodes);
-        }
+    if nodes.trailing_zeros() == 16 && time_control.hard_expired() {
+        return NegamaxResult::new_abort(*nodes);
     }
 
-    if stop_flag.load(Ordering::Relaxed) {
-        stop_flag.store(false, Ordering::Relaxed);
+    if stop_flag
+        .compare_exchange(true, false, Ordering::Relaxed, Ordering::Relaxed)
+        .is_ok()
+    {
         return NegamaxResult::new_abort(*nodes);
     }
 
@@ -205,45 +208,31 @@ fn negamax(
 
     let mut tt_move = None;
 
-    {
-        match tt_opts {
-            TTOptions::Enabled(tt) => {
-                let tt = tt.lock();
+    match tt_opts {
+        TTOptions::Enabled(tt) => {
+            let tt = tt.lock();
 
-                if let Some(entry) = tt.get(pos.zobrist_hash(), depth)
-                    && entry.hash == pos.zobrist_hash()
-                {
-                    tt_move = entry.best_move;
+            if let Some(entry) = tt.get(pos.zobrist_hash(), depth)
+                && entry.hash == pos.zobrist_hash()
+            {
+                tt_move = entry.best_move;
 
-                    if entry.depth >= depth {
-                        match entry.bound {
-                            Bound::Exact => {
-                                return NegamaxResult::new(entry.score, entry.best_move, *nodes);
-                            }
-                            Bound::Lower => {
-                                alpha = if entry.score > alpha {
-                                    entry.score
-                                } else {
-                                    alpha
-                                }
-                            }
-                            Bound::Upper => {
-                                beta = if entry.score < beta {
-                                    entry.score
-                                } else {
-                                    beta
-                                }
-                            }
-                        }
-
-                        if alpha >= beta {
+                if entry.depth >= depth {
+                    match entry.bound {
+                        Bound::Exact => {
                             return NegamaxResult::new(entry.score, entry.best_move, *nodes);
                         }
+                        Bound::Lower => alpha = max(alpha, entry.score),
+                        Bound::Upper => beta = min(beta, entry.score),
+                    }
+
+                    if alpha >= beta {
+                        return NegamaxResult::new(entry.score, entry.best_move, *nodes);
                     }
                 }
             }
-            TTOptions::Disabled => (),
         }
+        TTOptions::Disabled => (),
     }
 
     let moves = pos.legal_moves();
@@ -314,4 +303,146 @@ fn negamax(
 
     result.nodes = *nodes;
     result
+}
+
+fn quiesce(
+    pos: &mut Position,
+    tt_opts: &TTOptions,
+    mut alpha: Score,
+    mut beta: Score,
+    stop_flag: &Arc<AtomicBool>,
+    time_control: &TimeControl,
+    nodes: &mut u64,
+) -> NegamaxResult {
+    if nodes.trailing_zeros() == 16 && time_control.hard_expired() {
+        return NegamaxResult::new_abort(*nodes);
+    }
+
+    if stop_flag
+        .compare_exchange(true, false, Ordering::Relaxed, Ordering::Relaxed)
+        .is_ok()
+    {
+        return NegamaxResult::new_abort(*nodes);
+    }
+
+    let mut bound = Bound::Upper;
+    let mut tt_move = None;
+
+    match tt_opts {
+        TTOptions::Enabled(tt) => {
+            let tt = tt.lock();
+
+            // TODO: explanation comments
+            if let Some(entry) = tt.get(pos.zobrist_hash(), 0)
+                && entry.hash == pos.zobrist_hash()
+            {
+                tt_move = entry.best_move;
+
+                match entry.bound {
+                    Bound::Exact => {
+                        return NegamaxResult::new(entry.score, tt_move, *nodes);
+                    }
+                    Bound::Lower => alpha = max(alpha, entry.score),
+                    Bound::Upper => beta = min(beta, entry.score),
+                }
+
+                if alpha > beta {
+                    return NegamaxResult::new(entry.score, tt_move, *nodes);
+                }
+            }
+        }
+        TTOptions::Disabled => (),
+    }
+
+    let in_check = pos.in_check();
+
+    let mut best_score = if in_check {
+        Score::Mate(0)
+    } else {
+        let stand_pat = eval::static_eval(pos);
+
+        if stand_pat >= beta {
+            // TODO: store pos stand+pat into TT
+            return NegamaxResult::new(stand_pat, None, *nodes);
+        }
+
+        if stand_pat > alpha {
+            alpha = stand_pat;
+            bound = Bound::Exact;
+        }
+
+        stand_pat
+    };
+
+    let moves = if in_check {
+        pos.legal_moves()
+    } else {
+        // TODO: movegen for captures
+        todo!()
+    };
+
+    let mut best_move = None;
+    let mut scored_moves = mvv_lva::score_moves(moves, tt_move);
+
+    for i in 0..scored_moves.len() {
+        mvv_lva::bubble_high_scored_move(&mut scored_moves, i);
+        let current_move = scored_moves[i].0;
+
+        if !in_check {
+            let see_score = {
+                let turn = pos.turn();
+                let board = pos.board_mut();
+
+                eval::eval_see(board, current_move.to(), turn)
+            };
+
+            if see_score == 0 {
+                continue;
+            }
+
+            // 2 centipawns of margin
+            const DELTA_MARGIN: i16 = 200;
+            if best_score.value() + see_score + DELTA_MARGIN < alpha.value() {
+                continue;
+            }
+        }
+
+        let undo = pos.do_move_inner(current_move);
+        *nodes += 1;
+
+        let search_result = quiesce(pos, tt_opts, -beta, -alpha, stop_flag, time_control, nodes);
+
+        pos.undo_move(undo);
+
+        if matches!(search_result.score, Score::Abort) {
+            return search_result;
+        }
+
+        let inverted_score_step = (-search_result.score).step();
+
+        if inverted_score_step > best_score {
+            best_score = inverted_score_step;
+            best_move = Some(current_move)
+        }
+
+        if inverted_score_step > alpha {
+            alpha = inverted_score_step;
+            bound = Bound::Exact;
+        }
+
+        if inverted_score_step > beta {
+            bound = Bound::Lower;
+            break;
+        }
+    }
+
+    match tt_opts {
+        TTOptions::Enabled(tt) => {
+            let mut tt = tt.lock();
+            tt.insert(pos.zobrist_hash(), 0, best_score, best_move, bound);
+        }
+        TTOptions::Disabled => (),
+    }
+
+    return NegamaxResult::new(best_score, best_move, *nodes);
 }

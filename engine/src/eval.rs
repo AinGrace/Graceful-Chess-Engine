@@ -1,10 +1,10 @@
 use std::{
     fmt::Display,
-    ops::{Neg, Not, Sub},
+    ops::{Neg, Sub},
 };
 
-use position::position::Position;
-use types::{color::Color, square::Square};
+use position::{board::Board, position::Position};
+use types::{color::Color, piece::Piece, role::Role, square::Square};
 
 use crate::eval::constants::{
     BISHOP_PST, BISHOP_VALUE, KING_MIDDLE_GAME_PST, KNIGHT_PST, KNIGHT_VALUE, PAWN_PST, PAWN_VALUE,
@@ -15,11 +15,11 @@ use crate::eval::constants::{
 pub(crate) mod constants {
 
     /// assign 100 as default pawn value instead of 1 in order to avoid floating point calculations
-    pub const PAWN_VALUE    :   u32 = 100;
-    pub const KNIGHT_VALUE  :   u32 = 340;
-    pub const BISHOP_VALUE  :   u32 = 350;
-    pub const ROOK_VALUE    :   u32 = 500;
-    pub const QUEEN_VALUE   :   u32 = 900;
+    pub const PAWN_VALUE    :   i16 = 100;
+    pub const KNIGHT_VALUE  :   i16 = 340;
+    pub const BISHOP_VALUE  :   i16 = 350;
+    pub const ROOK_VALUE    :   i16 = 500;
+    pub const QUEEN_VALUE   :   i16 = 900;
 
     ///Piece-Square Tables (PSTs) are a simple evaluation technique that assigns a score to a piece depending on which square it occupies.
     ///The idea is:
@@ -221,8 +221,38 @@ pub fn static_eval(pos: &Position) -> Score {
     }
 }
 
-pub fn incremental_eval(_pos: &Position, _score: i32) -> i32 {
-    todo!()
+pub fn eval_see(board: &mut Board, dest: Square, us: Color) -> i16 {
+    let mut eval = 0;
+
+    if board.peek(dest).is_some()
+        && let Some(attk) = board.lva_to(dest, us)
+    {
+        let attacker = board.take_piece_at_checked(attk);
+        let defender = board
+            .replace_piece_at(attacker, dest)
+            .expect("defender exists");
+
+        let opponent_gain = eval_see(board, dest, !us);
+
+        eval = i16::max(0, defender_value(defender) - opponent_gain);
+
+        let attacker = board.take_piece_at_checked(dest);
+        board.set_piece_at(attacker, attk);
+        board.set_piece_at(defender, dest);
+    }
+
+    eval
+}
+
+fn defender_value(piece: Piece) -> i16 {
+    match piece.role() {
+        Role::Pawn => PAWN_VALUE,
+        Role::Knight => KNIGHT_VALUE,
+        Role::Bishop => BISHOP_VALUE,
+        Role::Rook => ROOK_VALUE,
+        Role::Queen => QUEEN_VALUE,
+        Role::King => i16::MAX,
+    }
 }
 
 fn mobility(pos: &Position) -> i16 {
@@ -232,21 +262,24 @@ fn mobility(pos: &Position) -> i16 {
     (us.len() - them.len()) as i16
 }
 
+#[rustfmt::skip]
 fn material_score(pos: &Position) -> i16 {
     let white = Color::White;
     let black = Color::Black;
 
-    let white_score = pos.board().pawns(white).popcnt() * PAWN_VALUE
-        + pos.board().knights(white).popcnt() * KNIGHT_VALUE
-        + pos.board().bishops(white).popcnt() * BISHOP_VALUE
-        + pos.board().rooks(white).popcnt() * ROOK_VALUE
-        + pos.board().queens(white).popcnt() * QUEEN_VALUE;
+    let white_score =
+          pos.board().pawns(white).popcnt()     as i16 * PAWN_VALUE
+        + pos.board().knights(white).popcnt()   as i16 * KNIGHT_VALUE
+        + pos.board().bishops(white).popcnt()   as i16 * BISHOP_VALUE
+        + pos.board().rooks(white).popcnt()     as i16 * ROOK_VALUE
+        + pos.board().queens(white).popcnt()    as i16 * QUEEN_VALUE;
 
-    let black_score = pos.board().pawns(black).popcnt() * PAWN_VALUE
-        + pos.board().knights(black).popcnt() * KNIGHT_VALUE
-        + pos.board().bishops(black).popcnt() * BISHOP_VALUE
-        + pos.board().rooks(black).popcnt() * ROOK_VALUE
-        + pos.board().queens(black).popcnt() * QUEEN_VALUE;
+    let black_score =
+          pos.board().pawns(black).popcnt()     as i16 * PAWN_VALUE
+        + pos.board().knights(black).popcnt()   as i16 * KNIGHT_VALUE
+        + pos.board().bishops(black).popcnt()   as i16 * BISHOP_VALUE
+        + pos.board().rooks(black).popcnt()     as i16 * ROOK_VALUE
+        + pos.board().queens(black).popcnt()    as i16 * QUEEN_VALUE;
 
     (white_score as i16) - (black_score as i16)
 }
@@ -321,86 +354,212 @@ fn calculate_piece_pst(table: &[i16; 64], square: Square, side: Color) -> i16 {
 #[cfg(test)]
 mod tests {
 
-    use types::{chess_move::Move, role::Role};
+    use position::fen::Fen;
 
     use super::*;
+    fn position(fen: &str) -> Position {
+        let fen = fen.parse::<Fen>().expect("valid FEN");
+        Position::from_fen(fen).expect("valid position")
+    }
+
+    fn see(fen: &str, dest: Square, them: Color) -> i16 {
+        let pos = position(fen);
+        let mut board = pos.board().clone();
+        println!("{:#?}", pos);
+
+        eval_see(&mut board, dest, them)
+    }
+    #[test]
+    fn see_pawn_takes_pawn() {
+        let score = see(
+            "4k3/8/8/3p4/4P3/8/8/4K3 w - - 0 1",
+            Square::D5,
+            Color::White,
+        );
+
+        assert_eq!(score, PAWN_VALUE);
+    }
 
     #[test]
-    fn eval_test() {
-        let mut pos = Position::new();
-        let moves = vec![
-            Move::quiet(Role::Pawn, Square::D2, Square::D4),
-            Move::quiet(Role::Pawn, Square::D7, Square::D5),
-            Move::quiet(Role::Knight, Square::G1, Square::F3),
-            Move::quiet(Role::Knight, Square::B8, Square::C6),
-            Move::quiet(Role::Knight, Square::B1, Square::C3),
-            Move::quiet(Role::Knight, Square::G8, Square::F6),
-            Move::quiet(Role::Pawn, Square::E2, Square::E3),
-            Move::quiet(Role::Pawn, Square::E7, Square::E6),
-            Move::quiet(Role::Pawn, Square::A2, Square::A3),
-            Move::quiet(Role::Pawn, Square::G7, Square::G6),
-            Move::quiet(Role::Bishop, Square::F1, Square::B5),
-            Move::quiet(Role::Pawn, Square::A7, Square::A6),
-            Move::capture(Role::Bishop, Square::B5, Square::C6, Role::Knight),
-            // Move::capture(Role::Pawn, Square::B7, Square::C6, Role::Bishop),
-            // Move::quiet(Role::Knight, Square::F3, Square::E5),
-            // Move::quiet(Role::Queen, Square::D8, Square::D6),
-            // Move::quiet(Role::Pawn, Square::F2, Square::F3),
-            // Move::quiet(Role::Pawn, Square::C6, Square::C5),
-            // Move::castling(CastlingSide::WShort),
-            // Move::quiet(Role::Pawn, Square::C5, Square::C4),
-            // Move::quiet(Role::Pawn, Square::E3, Square::E4),
-            // Move::quiet(Role::Pawn, Square::C7, Square::C6),
-            // Move::quiet(Role::Bishop, Square::C1, Square::F4),
-            // Move::quiet(Role::Pawn, Square::A6, Square::A5),
-            // Move::quiet(Role::Knight, Square::C3, Square::A4),
-            // Move::quiet(Role::Knight, Square::F6, Square::H5),
-            // Move::quiet(Role::Queen, Square::D1, Square::D2),
-            // Move::quiet(Role::Pawn, Square::F7, Square::F5),
-            // Move::capture(Role::Pawn, Square::E4, Square::F5, Role::Pawn),
-            // Move::capture(Role::Pawn, Square::E6, Square::F5, Role::Pawn),
-            // Move::quiet(Role::Rook, Square::F1, Square::E1),
-            // Move::quiet(Role::Bishop, Square::C8, Square::D7),
-            // Move::capture(Role::Knight, Square::E5, Square::C6, Role::Pawn),
-            // Move::quiet(Role::King, Square::E8, Square::F7),
-            // Move::capture(Role::Bishop, Square::F4, Square::D6, Role::Queen),
-            // Move::capture(Role::Bishop, Square::F8, Square::D6, Role::Bishop),
-            // Move::quiet(Role::Knight, Square::C6, Square::E5),
-            // Move::quiet(Role::King, Square::F7, Square::G7),
-            // Move::capture(Role::Knight, Square::E5, Square::D7, Role::Bishop),
-            // Move::quiet(Role::Pawn, Square::H7, Square::H6),
-            // Move::quiet(Role::Knight, Square::A4, Square::B6),
-            // Move::quiet(Role::Rook, Square::A8, Square::A7),
-            // Move::quiet(Role::Knight, Square::D7, Square::C5),
-            // Move::quiet(Role::Bishop, Square::D6, Square::F4),
-            // Move::quiet(Role::Knight, Square::C5, Square::E6),
-            // Move::quiet(Role::King, Square::G7, Square::F6),
-            // Move::capture(Role::Knight, Square::E6, Square::F4, Role::Bishop),
-            // Move::capture(Role::Knight, Square::H5, Square::F4, Role::Knight),
-            // Move::capture(Role::Queen, Square::D2, Square::F4, Role::Knight),
-            // Move::quiet(Role::Pawn, Square::G6, Square::G5),
-            // Move::quiet(Role::Queen, Square::F4, Square::E5),
-            // Move::quiet(Role::King, Square::F6, Square::F7),
-            // Move::capture(Role::Queen, Square::E5, Square::H8, Role::Rook),
-            // Move::quiet(Role::King, Square::F7, Square::G6),
-            // Move::quiet(Role::Pawn, Square::G2, Square::G4),
-            // Move::quiet(Role::Rook, Square::A7, Square::H7),
-            // Move::capture(Role::Queen, Square::H8, Square::H7, Role::Rook),
-            // Move::capture(Role::King, Square::G6, Square::H7, Role::Queen),
-            // Move::quiet(Role::Rook, Square::E1, Square::E7),
-            // Move::quiet(Role::King, Square::H7, Square::G6),
-            // Move::quiet(Role::Rook, Square::A1, Square::E1),
-            // Move::quiet(Role::King, Square::G6, Square::F6),
-            // Move::quiet(Role::Rook, Square::E1, Square::E6),
-        ];
+    fn see_pawn_takes_knight() {
+        let score = see(
+            "4k3/8/8/3n4/4P3/8/8/4K3 w - - 0 1",
+            Square::D5,
+            Color::White,
+        );
 
-        for mv in moves.into_iter() {
-            let _undo = pos.do_move(mv).unwrap();
-            dbg!(&pos);
-            dbg!(static_eval(&pos));
-            println!();
-            println!();
-            println!();
-        }
+        assert_eq!(score, KNIGHT_VALUE);
+    }
+
+    #[test]
+    fn see_knight_takes_queen() {
+        let score = see(
+            "4k3/3q4/8/4N3/8/8/8/4K3 w - - 0 1",
+            Square::D7,
+            Color::White,
+        );
+
+        assert_eq!(score, QUEEN_VALUE - KNIGHT_VALUE);
+    }
+
+    #[test]
+    fn see_equal_pawn_exchange_is_zero() {
+        let score = see(
+            "4k3/8/4p3/3p4/4P3/8/8/4K3 w - - 0 1",
+            Square::D5,
+            Color::White,
+        );
+
+        assert_eq!(score, 0);
+    }
+
+    #[test]
+    fn see_knight_takes_pawn_and_is_recaptured() {
+        let score = see(
+            "4k3/5n2/3p4/8/4N3/8/8/4K3 w - - 0 1",
+            Square::D6,
+            Color::White,
+        );
+
+        assert_eq!(score, 0);
+    }
+
+    #[test]
+    fn see_rook_takes_rook_and_is_recaptured() {
+        let score = see(
+            "4r1k1/8/8/4r3/8/8/8/4R1K1 w - - 0 1",
+            Square::E5,
+            Color::White,
+        );
+
+        assert_eq!(score, 0);
+    }
+
+    #[test]
+    fn see_winning_exchange() {
+        let score = see(
+            "4k3/5n2/8/4q3/8/8/8/4R1K1 w - - 0 1",
+            Square::E5,
+            Color::White,
+        );
+
+        assert_eq!(score, QUEEN_VALUE - ROOK_VALUE);
+    }
+
+    #[test]
+    fn see_losing_exchange_returns_zero() {
+        let score = see(
+            "4rk2/8/8/4p3/8/8/8/4Q1K1 w - - 0 1",
+            Square::E5,
+            Color::White,
+        );
+
+        assert_eq!(score, 0);
+    }
+
+    #[test]
+    fn see_bishop_takes_rook_and_gets_recaptured_by_knight() {
+        let score = see(
+            "4k3/5n2/8/4r3/8/8/8/B5K1 w - - 0 1",
+            Square::E5,
+            Color::White,
+        );
+
+        assert_eq!(score, ROOK_VALUE - BISHOP_VALUE);
+    }
+
+    #[test]
+    fn see_uses_least_valuable_attacker() {
+        let score = see(
+            "4k3/8/8/3n4/2p5/8/8/3R2K1 w - - 0 1",
+            Square::D5,
+            Color::White,
+        );
+
+        assert_eq!(score, KNIGHT_VALUE);
+    }
+
+    #[test]
+    fn see_prefers_knight_over_bishop() {
+        let score = see(
+            "4k3/1b6/8/3r4/8/4n3/8/3R2K1 w - - 0 1",
+            Square::D5,
+            Color::White,
+        );
+
+        assert_eq!(score, 0);
+    }
+
+    #[test]
+    fn see_handles_multiple_exchange_sequence() {
+        let score = see(
+            "4k3/5n2/8/4q3/8/8/2B5/4R1K1 w - - 0 1",
+            Square::E5,
+            Color::White,
+        );
+
+        assert_eq!(score, QUEEN_VALUE - KNIGHT_VALUE + BISHOP_VALUE);
+    }
+
+    #[test]
+    fn see_returns_zero_when_no_attacker_exists() {
+        let score = see("4k3/3q4/8/8/8/8/8/4K3 w - - 0 1", Square::D7, Color::White);
+
+        assert_eq!(score, 0);
+    }
+
+    #[test]
+    fn see_returns_zero_on_empty_destination() {
+        let score = see("4k3/8/8/8/4P3/8/8/4K3 w - - 0 1", Square::D5, Color::White);
+
+        assert_eq!(score, 0);
+    }
+
+    #[test]
+    fn see_king_capture_is_not_used_as_normal_material() {
+        let score = see("4k3/8/8/3K4/8/8/8/8 w - - 0 1", Square::E8, Color::White);
+
+        assert_eq!(score, 0);
+    }
+
+    #[test]
+    fn see_does_not_modify_board() {
+        let pos = position("4k3/5n2/8/4q3/8/8/2B5/4R1K1 w - - 0 1");
+
+        let mut board = pos.board().clone();
+        let before = board.clone();
+
+        let _ = eval_see(&mut board, Square::E5, Color::White);
+
+        assert_eq!(board, before);
+    }
+
+    #[test]
+    fn see_does_not_modify_board_after_deep_exchange() {
+        let pos = position("4rk2/5n2/8/4q3/8/8/2B5/4R1K1 w - - 0 1");
+
+        let mut board = pos.board().clone();
+        let before = board.clone();
+
+        let _ = eval_see(&mut board, Square::E5, Color::White);
+
+        assert_eq!(board, before);
+    }
+
+    #[test]
+    fn see_is_symmetric_for_white_and_black() {
+        let white_score = see(
+            "4k3/8/8/3p4/4P3/8/8/4K3 w - - 0 1",
+            Square::D5,
+            Color::White,
+        );
+
+        let black_score = see(
+            "4k3/8/8/3p4/4P3/8/8/4K3 b - - 0 1",
+            Square::E4,
+            Color::Black,
+        );
+
+        assert_eq!(white_score, black_score);
     }
 }

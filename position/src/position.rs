@@ -150,6 +150,10 @@ impl Position {
         self.board.attacks_to(king, !side)
     }
 
+    pub fn in_check(&self) -> bool {
+        self.checkers_to(self.turn()).present()
+    }
+
     pub fn is_checkmate(&self) -> bool {
         self.checkers_to(self.turn).present() && self.legal_moves().is_empty()
     }
@@ -187,6 +191,11 @@ impl Position {
     #[inline(always)]
     pub fn board(&self) -> &Board {
         &self.board
+    }
+
+    #[inline(always)]
+    pub fn board_mut(&mut self) -> &mut Board {
+        &mut self.board
     }
 
     pub fn ep_square(&self) -> Option<Square> {
@@ -248,7 +257,7 @@ impl Position {
                 promotion,
             } => {
                 let our_piece = board
-                    .remove_piece_at(to)
+                    .take_piece_at(to)
                     .expect("a piece is quaranteed to be there");
 
                 if promotion.is_some() {
@@ -267,7 +276,7 @@ impl Position {
                 }
             }
             Move::EnPassant { from, to } => {
-                let our_pawn = board.remove_piece_at(to).expect("pawn is quaranteed to be");
+                let our_pawn = board.take_piece_at(to).expect("pawn is quaranteed to be");
                 let enemy_pawn = if self.turn == Color::White {
                     Piece::BPawn
                 } else {
@@ -287,10 +296,10 @@ impl Position {
                 };
 
                 let king_piece = board
-                    .remove_piece_at(king_dest)
+                    .take_piece_at(king_dest)
                     .expect("king is quaranteed to be");
                 let rook_piece = board
-                    .remove_piece_at(rook_dest)
+                    .take_piece_at(rook_dest)
                     .expect("rook is quaranteed to be");
 
                 board.set_piece_at(king_piece, king);

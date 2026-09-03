@@ -286,6 +286,13 @@ impl Iterator for BitboardIter {
 
         Some(Square::from_u32_checked(sq))
     }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (
+            self.inner.popcnt() as usize,
+            Some(self.inner.popcnt() as usize),
+        )
+    }
 }
 
 impl From<u64> for Bitboard {
