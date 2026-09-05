@@ -76,12 +76,12 @@ impl TimeControl {
 
     pub fn increase_soft_by_factor(&mut self, factor: f64) {
         self.soft_limit = self.soft_limit.mul_f64(factor);
-        // match Duration::try_from_secs_f64(factor * self.soft_limit.as_secs_f64()) {
-        //     Ok(amount) => {
-        //         self.soft_limit = self.soft_limit.saturating_add(amount);
-        //     }
-        //     Err(_) => {}
-        // }
+        match Duration::try_from_secs_f64(factor * self.soft_limit.as_secs_f64()) {
+            Ok(amount) => {
+                self.soft_limit = self.soft_limit.saturating_add(amount);
+            }
+            Err(_) => {}
+        }
     }
 }
 
