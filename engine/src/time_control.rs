@@ -6,6 +6,8 @@ use std::{
 use position::position::Position;
 use types::color::Color;
 
+const AVG_MOVES_PER_GAME: u32 = 40;
+
 #[derive(Debug)]
 pub struct TimeControl {
     pub started: Instant,
@@ -14,20 +16,14 @@ pub struct TimeControl {
 
     pub total_allocation: u32, // millis
     pub increment: u32,
+
+    pub is_infinite: bool,
 }
 
 impl TimeControl {
     pub fn new(kind: TimeControlKind, pos: &Position) -> Self {
         let (total_allocation, increment) = match (&kind, pos.turn()) {
-            (TimeControlKind::Infinite, _) => {
-                return Self {
-                    started: Instant::now(),
-                    soft_limit: Duration::MAX,
-                    hard_limit: Duration::MAX,
-                    total_allocation: 0,
-                    increment: 0,
-                };
-            }
+            (TimeControlKind::Infinite, _) => return Self::new_infinite(),
 
             (TimeControlKind::SuddenDeath { w_time, .. }, Color::White) => (*w_time, 0),
             (TimeControlKind::SuddenDeath { b_time, .. }, Color::Black) => (*b_time, 0),
@@ -36,7 +32,7 @@ impl TimeControl {
             (TimeControlKind::Increment { b_time, b_inc, .. }, Color::Black) => (*b_time, *b_inc),
         };
 
-        let move_count = 50u32.saturating_sub(pos.half_moves() / 2).max(10);
+        let move_count = AVG_MOVES_PER_GAME.saturating_sub(pos.full_moves()).max(10);
 
         let base = (total_allocation / move_count) as u64;
         let soft_limit = Duration::from_millis(base + increment as u64 * 3 / 4);
@@ -51,9 +47,21 @@ impl TimeControl {
             hard_limit,
             total_allocation,
             increment,
+            is_infinite: false,
         };
 
         res
+    }
+
+    pub fn new_infinite() -> Self {
+        Self {
+            started: Instant::now(),
+            soft_limit: Duration::MAX,
+            hard_limit: Duration::MAX,
+            total_allocation: u32::MAX,
+            increment: u32::MAX,
+            is_infinite: true,
+        }
     }
 
     pub fn soft_expired(&self) -> bool {
@@ -75,13 +83,11 @@ impl TimeControl {
     }
 
     pub fn increase_soft_by_factor(&mut self, factor: f64) {
-        self.soft_limit = self.soft_limit.mul_f64(factor);
-        match Duration::try_from_secs_f64(factor * self.soft_limit.as_secs_f64()) {
-            Ok(amount) => {
-                self.soft_limit = self.soft_limit.saturating_add(amount);
-            }
-            Err(_) => {}
+        if self.is_infinite {
+            return;
         }
+
+        self.soft_limit = self.soft_limit.mul_f64(factor);
     }
 }
 
