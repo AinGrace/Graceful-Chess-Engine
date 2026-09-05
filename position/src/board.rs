@@ -1,4 +1,8 @@
-use std::{fmt, ops::Not};
+use std::{
+    cmp::{max, max_by},
+    fmt,
+    ops::Not,
+};
 
 use types::{
     bitboard::{Bitboard, ToBitboard},
@@ -6,7 +10,7 @@ use types::{
     by_role::ByRole,
     color::Color,
     file::File,
-    piece::Piece,
+    piece::Piece::{self, WKing},
     rank::Rank,
     role::Role,
     square::Square,
@@ -140,6 +144,34 @@ impl Board {
     }
 
     #[inline(always)]
+    pub fn non_king_pieces_of(&self, color: Color) -> Bitboard {
+        let pawns = self.pawns(color);
+        let knights = self.knights(color);
+        let bishops = self.bishops(color);
+        let rooks = self.rooks(color);
+        let queens = self.queens(color);
+
+        pawns | knights | bishops | rooks | queens
+    }
+
+    #[inline(always)]
+    pub fn is_endgame(&self) -> bool {
+        self.occupied().popcnt() <= 8
+    }
+
+    #[inline(always)]
+    pub fn dist_between_kings(&self) -> i16 {
+        // Chebyshev distance
+        let w_king = self.the_king(Color::White);
+        let b_king = self.the_king(Color::Black);
+
+        let x = w_king.file().to_i32() - b_king.file().to_i32();
+        let y = w_king.rank().to_i32() - b_king.file().to_i32();
+
+        max(x, y) as i16
+    }
+
+    #[inline(always)]
     pub fn peek(&self, square: Square) -> Option<Piece> {
         let role = self.by_role.peek_role(square)?;
         let color = self.by_color.peek_color(square)?;
@@ -197,11 +229,7 @@ impl Board {
 
     #[inline(always)]
     //TODO: consider pinned pieces and checks
-    pub fn lva_to(
-        &self,
-        sqr: Square,
-        us: Color,
-    ) -> Option<Square> {
+    pub fn lva_to(&self, sqr: Square, us: Color) -> Option<Square> {
         let occupied = self.occupied();
 
         let pawn = self.pawns(us) & lookup::pawn_attacks(!us, sqr).to_bb();
@@ -216,8 +244,7 @@ impl Board {
             return Some(knight);
         }
 
-        let bishop =
-            self.bishops(us) & lookup::bishop_attacks(sqr, occupied.as_u64()).to_bb();
+        let bishop = self.bishops(us) & lookup::bishop_attacks(sqr, occupied.as_u64()).to_bb();
 
         if let Some(bishop) = bishop.first_square() {
             return Some(bishop);

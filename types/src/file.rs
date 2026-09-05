@@ -22,6 +22,10 @@ impl File {
         self as u32
     }
 
+    pub const fn to_i32(self) -> i32 {
+        self as i32
+    }
+
     pub fn from_char(chr: char) -> Option<Self> {
         match chr {
             'A' | 'a' => Some(Self::A),

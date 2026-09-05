@@ -7,8 +7,8 @@ use position::{board::Board, position::Position};
 use types::{color::Color, piece::Piece, role::Role, square::Square};
 
 use crate::eval::constants::{
-    BISHOP_PST, BISHOP_VALUE, KING_MIDDLE_GAME_PST, KNIGHT_PST, KNIGHT_VALUE, PAWN_PST, PAWN_VALUE,
-    QUEEN_PST, QUEEN_VALUE, ROOK_PST, ROOK_VALUE,
+    BISHOP_PST, BISHOP_VALUE, KING_END_GAME_PST, KING_MIDDLE_GAME_PST, KING_PENALTY_FACTOR,
+    KNIGHT_PST, KNIGHT_VALUE, PAWN_PST, PAWN_VALUE, QUEEN_PST, QUEEN_VALUE, ROOK_PST, ROOK_VALUE,
 };
 
 #[rustfmt::skip]
@@ -20,6 +20,8 @@ pub(crate) mod constants {
     pub const BISHOP_VALUE  :   i16 = 350;
     pub const ROOK_VALUE    :   i16 = 500;
     pub const QUEEN_VALUE   :   i16 = 900;
+
+    pub const KING_PENALTY_FACTOR : i16 = 70;
 
     ///Piece-Square Tables (PSTs) are a simple evaluation technique that assigns a score to a piece depending on which square it occupies.
     ///The idea is:
@@ -259,7 +261,7 @@ fn mobility(pos: &Position) -> i16 {
     let us = pos.legal_moves_for(pos.turn());
     let them = pos.legal_moves_for(!pos.turn());
 
-    (us.len() - them.len()) as i16
+    (us.len() as isize - them.len() as isize) as i16
 }
 
 #[rustfmt::skip]
@@ -312,9 +314,14 @@ fn calculate_pst_score(pos: &Position) -> i16 {
         .queens(white)
         .for_each(|queen| score += calculate_piece_pst(&QUEEN_PST, queen, white));
 
-    board
-        .king(white)
-        .for_each(|king| score += calculate_piece_pst(&KING_MIDDLE_GAME_PST, king, white));
+    board.king(white).for_each(|king| {
+        if pos.board().is_endgame() {
+            score += calculate_piece_pst(&KING_END_GAME_PST, king, white);
+            score += king_dist_eval(board, white);
+        } else {
+            score += calculate_piece_pst(&KING_MIDDLE_GAME_PST, king, white);
+        }
+    });
 
     // ---- BLACK ----
     board
@@ -337,11 +344,40 @@ fn calculate_pst_score(pos: &Position) -> i16 {
         .queens(black)
         .for_each(|queen| score += calculate_piece_pst(&QUEEN_PST, queen, black));
 
-    board
-        .king(black)
-        .for_each(|king| score += calculate_piece_pst(&KING_MIDDLE_GAME_PST, king, black));
+    board.king(black).for_each(|king| {
+        if pos.board().is_endgame() {
+            score += calculate_piece_pst(&KING_END_GAME_PST, king, white);
+            score += king_dist_eval(board, black);
+        } else {
+            score += calculate_piece_pst(&KING_MIDDLE_GAME_PST, king, white);
+        }
+    });
 
     score
+}
+
+/// in endgame where only a few pieces remain kings are encouraged to be close to each other
+/// 
+/// apply score penalty otherwise
+fn king_dist_eval(board: &Board, us: Color) -> i16 {
+    let non_king_pieces =
+        board.non_king_pieces_of(Color::White) | board.non_king_pieces_of(Color::Black);
+    let pawns = board.pawns(Color::White) | board.pawns(Color::Black);
+
+    if non_king_pieces.popcnt() == 1 && !non_king_pieces.intersects(pawns) {
+        let distance = board.dist_between_kings();
+        let advantage = if board.by_color(us).popcnt() == 2 {
+            1
+        } else {
+            -1
+        };
+
+        let king_penalty = -distance * advantage * KING_PENALTY_FACTOR;
+
+        king_penalty
+    } else {
+        0
+    }
 }
 
 fn calculate_piece_pst(table: &[i16; 64], square: Square, side: Color) -> i16 {
@@ -357,209 +393,220 @@ mod tests {
     use position::fen::Fen;
 
     use super::*;
-    fn position(fen: &str) -> Position {
+
+    fn pos_from_fen(fen: &str) -> Position {
         let fen = fen.parse::<Fen>().expect("valid FEN");
         Position::from_fen(fen).expect("valid position")
     }
 
-    fn see(fen: &str, dest: Square, them: Color) -> i16 {
-        let pos = position(fen);
-        let mut board = pos.board().clone();
-        println!("{:#?}", pos);
+    mod see {
+        use types::{color::Color, square::Square};
 
-        eval_see(&mut board, dest, them)
-    }
-    #[test]
-    fn see_pawn_takes_pawn() {
-        let score = see(
-            "4k3/8/8/3p4/4P3/8/8/4K3 w - - 0 1",
-            Square::D5,
-            Color::White,
-        );
+        use crate::eval::{
+            constants::{BISHOP_VALUE, KNIGHT_VALUE, PAWN_VALUE, QUEEN_VALUE, ROOK_VALUE},
+            eval_see,
+            tests::pos_from_fen,
+        };
 
-        assert_eq!(score, PAWN_VALUE);
-    }
+        fn see(fen: &str, dest: Square, them: Color) -> i16 {
+            let pos = pos_from_fen(fen);
+            let mut board = pos.board().clone();
+            println!("{:#?}", pos);
 
-    #[test]
-    fn see_pawn_takes_knight() {
-        let score = see(
-            "4k3/8/8/3n4/4P3/8/8/4K3 w - - 0 1",
-            Square::D5,
-            Color::White,
-        );
+            eval_see(&mut board, dest, them)
+        }
+        #[test]
+        fn see_pawn_takes_pawn() {
+            let score = see(
+                "4k3/8/8/3p4/4P3/8/8/4K3 w - - 0 1",
+                Square::D5,
+                Color::White,
+            );
 
-        assert_eq!(score, KNIGHT_VALUE);
-    }
+            assert_eq!(score, PAWN_VALUE);
+        }
 
-    #[test]
-    fn see_knight_takes_queen() {
-        let score = see(
-            "4k3/3q4/8/4N3/8/8/8/4K3 w - - 0 1",
-            Square::D7,
-            Color::White,
-        );
+        #[test]
+        fn see_pawn_takes_knight() {
+            let score = see(
+                "4k3/8/8/3n4/4P3/8/8/4K3 w - - 0 1",
+                Square::D5,
+                Color::White,
+            );
 
-        assert_eq!(score, QUEEN_VALUE - KNIGHT_VALUE);
-    }
+            assert_eq!(score, KNIGHT_VALUE);
+        }
 
-    #[test]
-    fn see_equal_pawn_exchange_is_zero() {
-        let score = see(
-            "4k3/8/4p3/3p4/4P3/8/8/4K3 w - - 0 1",
-            Square::D5,
-            Color::White,
-        );
+        #[test]
+        fn see_knight_takes_queen() {
+            let score = see(
+                "4k3/3q4/8/4N3/8/8/8/4K3 w - - 0 1",
+                Square::D7,
+                Color::White,
+            );
 
-        assert_eq!(score, 0);
-    }
+            assert_eq!(score, QUEEN_VALUE - KNIGHT_VALUE);
+        }
 
-    #[test]
-    fn see_knight_takes_pawn_and_is_recaptured() {
-        let score = see(
-            "4k3/5n2/3p4/8/4N3/8/8/4K3 w - - 0 1",
-            Square::D6,
-            Color::White,
-        );
+        #[test]
+        fn see_equal_pawn_exchange_is_zero() {
+            let score = see(
+                "4k3/8/4p3/3p4/4P3/8/8/4K3 w - - 0 1",
+                Square::D5,
+                Color::White,
+            );
 
-        assert_eq!(score, 0);
-    }
+            assert_eq!(score, 0);
+        }
 
-    #[test]
-    fn see_rook_takes_rook_and_is_recaptured() {
-        let score = see(
-            "4r1k1/8/8/4r3/8/8/8/4R1K1 w - - 0 1",
-            Square::E5,
-            Color::White,
-        );
+        #[test]
+        fn see_knight_takes_pawn_and_is_recaptured() {
+            let score = see(
+                "4k3/5n2/3p4/8/4N3/8/8/4K3 w - - 0 1",
+                Square::D6,
+                Color::White,
+            );
 
-        assert_eq!(score, 0);
-    }
+            assert_eq!(score, 0);
+        }
 
-    #[test]
-    fn see_winning_exchange() {
-        let score = see(
-            "4k3/5n2/8/4q3/8/8/8/4R1K1 w - - 0 1",
-            Square::E5,
-            Color::White,
-        );
+        #[test]
+        fn see_rook_takes_rook_and_is_recaptured() {
+            let score = see(
+                "4r1k1/8/8/4r3/8/8/8/4R1K1 w - - 0 1",
+                Square::E5,
+                Color::White,
+            );
 
-        assert_eq!(score, QUEEN_VALUE - ROOK_VALUE);
-    }
+            assert_eq!(score, 0);
+        }
 
-    #[test]
-    fn see_losing_exchange_returns_zero() {
-        let score = see(
-            "4rk2/8/8/4p3/8/8/8/4Q1K1 w - - 0 1",
-            Square::E5,
-            Color::White,
-        );
+        #[test]
+        fn see_winning_exchange() {
+            let score = see(
+                "4k3/5n2/8/4q3/8/8/8/4R1K1 w - - 0 1",
+                Square::E5,
+                Color::White,
+            );
 
-        assert_eq!(score, 0);
-    }
+            assert_eq!(score, QUEEN_VALUE - ROOK_VALUE);
+        }
 
-    #[test]
-    fn see_bishop_takes_rook_and_gets_recaptured_by_knight() {
-        let score = see(
-            "4k3/5n2/8/4r3/8/8/8/B5K1 w - - 0 1",
-            Square::E5,
-            Color::White,
-        );
+        #[test]
+        fn see_losing_exchange_returns_zero() {
+            let score = see(
+                "4rk2/8/8/4p3/8/8/8/4Q1K1 w - - 0 1",
+                Square::E5,
+                Color::White,
+            );
 
-        assert_eq!(score, ROOK_VALUE - BISHOP_VALUE);
-    }
+            assert_eq!(score, 0);
+        }
 
-    #[test]
-    fn see_uses_least_valuable_attacker() {
-        let score = see(
-            "4k3/8/8/3n4/2p5/8/8/3R2K1 w - - 0 1",
-            Square::D5,
-            Color::White,
-        );
+        #[test]
+        fn see_bishop_takes_rook_and_gets_recaptured_by_knight() {
+            let score = see(
+                "4k3/5n2/8/4r3/8/8/8/B5K1 w - - 0 1",
+                Square::E5,
+                Color::White,
+            );
 
-        assert_eq!(score, KNIGHT_VALUE);
-    }
+            assert_eq!(score, ROOK_VALUE - BISHOP_VALUE);
+        }
 
-    #[test]
-    fn see_prefers_knight_over_bishop() {
-        let score = see(
-            "4k3/1b6/8/3r4/8/4n3/8/3R2K1 w - - 0 1",
-            Square::D5,
-            Color::White,
-        );
+        #[test]
+        fn see_uses_least_valuable_attacker() {
+            let score = see(
+                "4k3/8/8/3n4/2p5/8/8/3R2K1 w - - 0 1",
+                Square::D5,
+                Color::White,
+            );
 
-        assert_eq!(score, 0);
-    }
+            assert_eq!(score, KNIGHT_VALUE);
+        }
 
-    #[test]
-    fn see_handles_multiple_exchange_sequence() {
-        let score = see(
-            "4k3/5n2/8/4q3/8/8/2B5/4R1K1 w - - 0 1",
-            Square::E5,
-            Color::White,
-        );
+        #[test]
+        fn see_prefers_knight_over_bishop() {
+            let score = see(
+                "4k3/1b6/8/3r4/8/4n3/8/3R2K1 w - - 0 1",
+                Square::D5,
+                Color::White,
+            );
 
-        assert_eq!(score, QUEEN_VALUE - KNIGHT_VALUE + BISHOP_VALUE);
-    }
+            assert_eq!(score, 0);
+        }
 
-    #[test]
-    fn see_returns_zero_when_no_attacker_exists() {
-        let score = see("4k3/3q4/8/8/8/8/8/4K3 w - - 0 1", Square::D7, Color::White);
+        #[test]
+        fn see_handles_multiple_exchange_sequence() {
+            let score = see(
+                "4k3/5n2/8/4q3/8/8/2B5/4R1K1 w - - 0 1",
+                Square::E5,
+                Color::White,
+            );
 
-        assert_eq!(score, 0);
-    }
+            assert_eq!(score, QUEEN_VALUE - KNIGHT_VALUE + BISHOP_VALUE);
+        }
 
-    #[test]
-    fn see_returns_zero_on_empty_destination() {
-        let score = see("4k3/8/8/8/4P3/8/8/4K3 w - - 0 1", Square::D5, Color::White);
+        #[test]
+        fn see_returns_zero_when_no_attacker_exists() {
+            let score = see("4k3/3q4/8/8/8/8/8/4K3 w - - 0 1", Square::D7, Color::White);
 
-        assert_eq!(score, 0);
-    }
+            assert_eq!(score, 0);
+        }
 
-    #[test]
-    fn see_king_capture_is_not_used_as_normal_material() {
-        let score = see("4k3/8/8/3K4/8/8/8/8 w - - 0 1", Square::E8, Color::White);
+        #[test]
+        fn see_returns_zero_on_empty_destination() {
+            let score = see("4k3/8/8/8/4P3/8/8/4K3 w - - 0 1", Square::D5, Color::White);
 
-        assert_eq!(score, 0);
-    }
+            assert_eq!(score, 0);
+        }
 
-    #[test]
-    fn see_does_not_modify_board() {
-        let pos = position("4k3/5n2/8/4q3/8/8/2B5/4R1K1 w - - 0 1");
+        #[test]
+        fn see_king_capture_is_not_used_as_normal_material() {
+            let score = see("4k3/8/8/3K4/8/8/8/8 w - - 0 1", Square::E8, Color::White);
 
-        let mut board = pos.board().clone();
-        let before = board.clone();
+            assert_eq!(score, 0);
+        }
 
-        let _ = eval_see(&mut board, Square::E5, Color::White);
+        #[test]
+        fn see_does_not_modify_board() {
+            let pos = pos_from_fen("4k3/5n2/8/4q3/8/8/2B5/4R1K1 w - - 0 1");
 
-        assert_eq!(board, before);
-    }
+            let mut board = pos.board().clone();
+            let before = board.clone();
 
-    #[test]
-    fn see_does_not_modify_board_after_deep_exchange() {
-        let pos = position("4rk2/5n2/8/4q3/8/8/2B5/4R1K1 w - - 0 1");
+            let _ = eval_see(&mut board, Square::E5, Color::White);
 
-        let mut board = pos.board().clone();
-        let before = board.clone();
+            assert_eq!(board, before);
+        }
 
-        let _ = eval_see(&mut board, Square::E5, Color::White);
+        #[test]
+        fn see_does_not_modify_board_after_deep_exchange() {
+            let pos = pos_from_fen("4rk2/5n2/8/4q3/8/8/2B5/4R1K1 w - - 0 1");
 
-        assert_eq!(board, before);
-    }
+            let mut board = pos.board().clone();
+            let before = board.clone();
 
-    #[test]
-    fn see_is_symmetric_for_white_and_black() {
-        let white_score = see(
-            "4k3/8/8/3p4/4P3/8/8/4K3 w - - 0 1",
-            Square::D5,
-            Color::White,
-        );
+            let _ = eval_see(&mut board, Square::E5, Color::White);
 
-        let black_score = see(
-            "4k3/8/8/3p4/4P3/8/8/4K3 b - - 0 1",
-            Square::E4,
-            Color::Black,
-        );
+            assert_eq!(board, before);
+        }
 
-        assert_eq!(white_score, black_score);
+        #[test]
+        fn see_is_symmetric_for_white_and_black() {
+            let white_score = see(
+                "4k3/8/8/3p4/4P3/8/8/4K3 w - - 0 1",
+                Square::D5,
+                Color::White,
+            );
+
+            let black_score = see(
+                "4k3/8/8/3p4/4P3/8/8/4K3 b - - 0 1",
+                Square::E4,
+                Color::Black,
+            );
+
+            assert_eq!(white_score, black_score);
+        }
     }
 }
