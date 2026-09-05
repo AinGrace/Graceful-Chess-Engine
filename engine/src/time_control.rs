@@ -1,4 +1,5 @@
 use std::{
+    cmp,
     fmt::{self, Display},
     time::{Duration, Instant},
 };
@@ -8,13 +9,18 @@ use types::color::Color;
 
 const AVG_MOVES_PER_GAME: u32 = 40;
 
+/// Buffer to account for IO overhead
+const LAG_BUFFER_MILLIS: u32 = 30;
+
+const FLOOR_MS: u32 = 300;
+
 #[derive(Debug)]
 pub struct TimeControl {
     pub started: Instant,
     pub soft_limit: Duration,
     pub hard_limit: Duration,
 
-    pub total_allocation: u32, // millis
+    pub remaining_millis: u32,
     pub increment: u32,
 
     pub is_infinite: bool,
@@ -22,7 +28,7 @@ pub struct TimeControl {
 
 impl TimeControl {
     pub fn new(kind: TimeControlKind, pos: &Position) -> Self {
-        let (total_allocation, increment) = match (&kind, pos.turn()) {
+        let (remaining_millis, increment) = match (&kind, pos.turn()) {
             (TimeControlKind::Infinite, _) => return Self::new_infinite(),
 
             (TimeControlKind::SuddenDeath { w_time, .. }, Color::White) => (*w_time, 0),
@@ -32,20 +38,27 @@ impl TimeControl {
             (TimeControlKind::Increment { b_time, b_inc, .. }, Color::Black) => (*b_time, *b_inc),
         };
 
-        let move_count = AVG_MOVES_PER_GAME.saturating_sub(pos.full_moves()).max(10);
+        let remaining_millis = remaining_millis.saturating_sub(LAG_BUFFER_MILLIS);
 
-        let base = (total_allocation / move_count) as u64;
-        let soft_limit = Duration::from_millis(base + increment as u64 * 3 / 4);
+        let soft_limit = if remaining_millis < 1000 {
+            let base = cmp::max(remaining_millis / 20, FLOOR_MS);
+            Duration::from_millis((base + increment * 3 / 4) as u64)
+        } else {
+            let move_count = AVG_MOVES_PER_GAME.saturating_sub(pos.full_moves()).max(10);
+            let base = (remaining_millis / move_count) as u64;
+            Duration::from_millis(base + increment as u64 * 3 / 4)
+        };
 
         let hard_limit = Duration::from_millis(
-            (total_allocation as u64 / 4).min(soft_limit.as_millis() as u64 * 4),
-        );
+            (remaining_millis as u64 / 20).min(soft_limit.as_millis() as u64 * 4),
+        )
+        .max(soft_limit);
 
         let res = Self {
             started: Instant::now(),
             soft_limit,
             hard_limit,
-            total_allocation,
+            remaining_millis,
             increment,
             is_infinite: false,
         };
@@ -58,7 +71,7 @@ impl TimeControl {
             started: Instant::now(),
             soft_limit: Duration::MAX,
             hard_limit: Duration::MAX,
-            total_allocation: u32::MAX,
+            remaining_millis: u32::MAX,
             increment: u32::MAX,
             is_infinite: true,
         }
@@ -97,7 +110,7 @@ impl Display for TimeControl {
         writeln!(
             f,
             "    total time: {:<10}",
-            format!("{:?}", self.total_allocation),
+            format!("{:?}", self.remaining_millis),
         )?;
         writeln!(f, "    increment:  {:<10}", format!("{:?}", self.increment),)?;
         writeln!(

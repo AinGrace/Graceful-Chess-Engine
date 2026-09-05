@@ -7,14 +7,14 @@ use std::{
     time::Duration,
 };
 
-use position::{move_gen, position::Position};
+use position::{position::Position};
 use types::chess_move::Move;
 
 use crate::{
     eval::{self, Score},
     mvv_lva,
     time_control::TimeControl,
-    tt::{TT, TTOptions},
+    tt::TTOptions,
 };
 
 pub const MAX_DEPTH: u8 = 128;
@@ -119,8 +119,13 @@ where
     let alpha = Score::Mate(-1);
     let beta = Score::Mate(1);
 
+    let mut previous_depth_time = time_control.elapsed_from_start();
+    let mut next_depth_prediction = Duration::from_millis(0);
+
     for curr_depth in 1..=search_depth {
-        if time_control.soft_expired() {
+        if time_control.soft_expired()
+            || time_control.elapsed_from_start() + next_depth_prediction > time_control.soft_limit
+        {
             return result;
         }
 
@@ -134,6 +139,14 @@ where
             &time_control,
             &mut 0,
         );
+
+        if !previous_depth_time.is_zero() {
+            let curr_cumulative = time_control.elapsed_from_start();
+            let curr_depth_time = curr_cumulative - previous_depth_time;
+            let delta = curr_depth_time.div_duration_f64(previous_depth_time);
+            next_depth_prediction = curr_depth_time.mul_f64(delta);
+            previous_depth_time = curr_cumulative;
+        }
 
         if time_control.soft_limit != Duration::MAX {
             let factor = should_extend(
@@ -212,23 +225,19 @@ fn negamax(
         TTOptions::Enabled(tt) => {
             let tt = tt.lock();
 
-            if let Some(entry) = tt.get(pos.zobrist_hash(), depth)
-                && entry.hash == pos.zobrist_hash()
-            {
+            if let Some(entry) = tt.get(pos.zobrist_hash(), depth) {
                 tt_move = entry.best_move;
 
-                if entry.depth >= depth {
-                    match entry.bound {
-                        Bound::Exact => {
-                            return NegamaxResult::new(entry.score, entry.best_move, *nodes);
-                        }
-                        Bound::Lower => alpha = max(alpha, entry.score),
-                        Bound::Upper => beta = min(beta, entry.score),
-                    }
-
-                    if alpha >= beta {
+                match entry.bound {
+                    Bound::Exact => {
                         return NegamaxResult::new(entry.score, entry.best_move, *nodes);
                     }
+                    Bound::Lower => alpha = max(alpha, entry.score),
+                    Bound::Upper => beta = min(beta, entry.score),
+                }
+
+                if alpha >= beta {
+                    return NegamaxResult::new(entry.score, entry.best_move, *nodes);
                 }
             }
         }
@@ -236,6 +245,19 @@ fn negamax(
     }
 
     let moves = pos.legal_moves();
+
+    if moves.is_empty() {
+        let score = if pos.in_check() {
+            Score::Mate(0)
+        } else {
+            Score::Draw
+        };
+        return NegamaxResult {
+            score,
+            best_move: None,
+            nodes: *nodes,
+        };
+    }
 
     let mut result = NegamaxResult::new(Score::Mate(0), None, *nodes);
 
