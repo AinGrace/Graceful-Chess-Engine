@@ -887,7 +887,7 @@ mod tests {
         let before = board.clone();
 
         let undo = board
-            .do_move(Move::capture_promotion(
+            .do_move(Move::cap_prom(
                 Square::B7,
                 Square::A8,
                 Role::Rook,

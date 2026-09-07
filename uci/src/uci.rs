@@ -151,12 +151,15 @@ impl<W: Write + Send, R: BufRead> Uci<W, R> {
                 );
             },
             move |res| {
+                info!("before lock");
                 let mut writer = final_writer.lock().expect("FATAL");
+                info!("after lock");
                 if let Some(res) = res {
                     Self::send(format!("bestmove {}", res.to_uci()), &mut *writer)
                 } else {
                     Self::send("bestmove 0000", &mut *writer);
                 }
+                info!("after send")
             },
         );
     }

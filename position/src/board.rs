@@ -1,5 +1,5 @@
 use std::{
-    cmp::{max, max_by},
+    cmp::max,
     fmt,
     ops::Not,
 };
@@ -10,7 +10,7 @@ use types::{
     by_role::ByRole,
     color::Color,
     file::File,
-    piece::Piece::{self, WKing},
+    piece::Piece::{self},
     rank::Rank,
     role::Role,
     square::Square,

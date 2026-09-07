@@ -4,6 +4,7 @@ use types::{
         Bitboard, ToBitboard,
         masks::{RANK_1, RANK_2, RANK_7, RANK_8},
     },
+    castlings::Castlings,
     chess_move::Move,
     color::Color,
     direction::Direction,
@@ -13,21 +14,22 @@ use types::{
     square::Square,
 };
 
-use crate::{move_gen::pin_info::PinInfo, position::Position};
+use crate::{board::Board, move_gen::pin_info::PinInfo, position::Position};
 
 pub fn gen_legal_moves_for(pos: &Position, us: Color) -> MoveList {
     let mut moves = MoveList::new();
+    let board = pos.board();
     let king_checkers = pos.checkers_to(us);
-    let king_sqr = pos.board().the_king(us);
+    let king_sqr = board.the_king(us);
 
     let pin_info = PinInfo::compute(pos, us);
 
     if king_checkers.empty() {
-        gen_quiet_and_captures(pos, us, &pin_info, &mut moves);
-        gen_castling_moves(pos, us, &mut moves);
+        gen_quiet_and_captures(board, us, &pin_info, &mut moves);
+        gen_castling_moves(board, *pos.castling_rights(), us, &mut moves);
         gen_ep_moves(pos, us, &mut moves);
     } else if king_checkers.popcnt() == 2 {
-        gen_king_moves(pos, us, king_sqr, &mut moves);
+        gen_king_moves(board, us, king_sqr, &mut moves);
     } else {
         gen_evasions(
             pos,
@@ -42,10 +44,8 @@ pub fn gen_legal_moves_for(pos: &Position, us: Color) -> MoveList {
     moves
 }
 
-fn gen_quiet_and_captures(pos: &Position, us: Color, pin_info: &PinInfo, moves: &mut MoveList) {
-    let board = pos.board();
-
-    gen_king_moves(pos, us, board.the_king(us), moves);
+fn gen_quiet_and_captures(board: &Board, us: Color, pin_info: &PinInfo, moves: &mut MoveList) {
+    gen_king_moves(board, us, board.the_king(us), moves);
 
     let pawns = board.pawns(us);
     let knights = board.knights(us);
@@ -57,7 +57,7 @@ fn gen_quiet_and_captures(pos: &Position, us: Color, pin_info: &PinInfo, moves: 
     let unpinned = board.by_color(us) & !pinned;
 
     gen_unpinned_quiet_and_capture_moves(
-        pos,
+        board,
         us,
         pawns & unpinned,
         knights & unpinned,
@@ -68,7 +68,7 @@ fn gen_quiet_and_captures(pos: &Position, us: Color, pin_info: &PinInfo, moves: 
     );
 
     gen_pinned_quiet_and_capture_moves(
-        pos,
+        board,
         us,
         pawns & pinned,
         bishops & pinned,
@@ -81,7 +81,7 @@ fn gen_quiet_and_captures(pos: &Position, us: Color, pin_info: &PinInfo, moves: 
 
 #[allow(clippy::too_many_arguments)]
 fn gen_pinned_quiet_and_capture_moves(
-    pos: &Position,
+    board: &Board,
     us: Color,
     pawns: Bitboard,
     bishops: Bitboard,
@@ -90,8 +90,8 @@ fn gen_pinned_quiet_and_capture_moves(
     pin_info: &PinInfo,
     moves: &mut MoveList,
 ) {
-    let occupied = pos.board().occupied();
-    let enemy = pos.board().by_color(!us);
+    let occupied = board.occupied();
+    let enemy = board.by_color(!us);
     let empty = !occupied;
 
     pawns.for_each(|pawn| {
@@ -101,36 +101,16 @@ fn gen_pinned_quiet_and_capture_moves(
 
         let restricted_pawn_attacks = pin_ray & lookup::pawn_attacks(us, pawn).to_bb();
         restricted_pawn_attacks.for_each(|attk| {
-            let maybe_enemy = pos.board().peek(attk);
+            let maybe_enemy = board.peek(attk);
             if let Some(enemy_piece) = maybe_enemy
                 && enemy_piece.color() == !us
             {
                 // capture promotion
                 if attk.rank() == Rank::First || attk.rank() == Rank::Eighth {
-                    moves.push(Move::capture_promotion(
-                        pawn,
-                        attk,
-                        enemy_piece.role(),
-                        Role::Queen,
-                    ));
-                    moves.push(Move::capture_promotion(
-                        pawn,
-                        attk,
-                        enemy_piece.role(),
-                        Role::Rook,
-                    ));
-                    moves.push(Move::capture_promotion(
-                        pawn,
-                        attk,
-                        enemy_piece.role(),
-                        Role::Bishop,
-                    ));
-                    moves.push(Move::capture_promotion(
-                        pawn,
-                        attk,
-                        enemy_piece.role(),
-                        Role::Knight,
-                    ));
+                    moves.push(Move::cap_prom(pawn, attk, enemy_piece.role(), Role::Queen));
+                    moves.push(Move::cap_prom(pawn, attk, enemy_piece.role(), Role::Rook));
+                    moves.push(Move::cap_prom(pawn, attk, enemy_piece.role(), Role::Bishop));
+                    moves.push(Move::cap_prom(pawn, attk, enemy_piece.role(), Role::Knight));
                 } else {
                     moves.push(Move::capture(Role::Pawn, pawn, attk, enemy_piece.role()));
                 }
@@ -139,13 +119,13 @@ fn gen_pinned_quiet_and_capture_moves(
 
         let restricted_pawn_pushes = pin_ray & lookup::pawn_pushes(us, pawn).to_bb();
         restricted_pawn_pushes.for_each(|push| {
-            let not_occupied = !pos.board().occupied().is_square_set(push);
+            let not_occupied = !occupied.is_square_set(push);
             if not_occupied {
                 if push.rank() == Rank::First || push.rank() == Rank::Eighth {
-                    moves.push(Move::promotion(pawn, push, Role::Queen));
-                    moves.push(Move::promotion(pawn, push, Role::Rook));
-                    moves.push(Move::promotion(pawn, push, Role::Bishop));
-                    moves.push(Move::promotion(pawn, push, Role::Knight));
+                    moves.push(Move::prom(pawn, push, Role::Queen));
+                    moves.push(Move::prom(pawn, push, Role::Rook));
+                    moves.push(Move::prom(pawn, push, Role::Bishop));
+                    moves.push(Move::prom(pawn, push, Role::Knight));
                 } else {
                     moves.push(Move::quiet(Role::Pawn, pawn, push));
                 }
@@ -154,8 +134,8 @@ fn gen_pinned_quiet_and_capture_moves(
 
         let restricted_double_pushes = pin_ray & lookup::pawn_double_pushes(us, pawn).to_bb();
         restricted_double_pushes.for_each(|double_push| {
-            let not_occupied = !pos.board().occupied().is_square_set(double_push);
-            let mid_not_occupied = !pos.board().occupied().is_square_set(if us == Color::White {
+            let not_occupied = !occupied.is_square_set(double_push);
+            let mid_not_occupied = !occupied.is_square_set(if us == Color::White {
                 double_push.offset_checked(-8)
             } else {
                 double_push.offset_checked(8)
@@ -186,7 +166,7 @@ fn gen_pinned_quiet_and_capture_moves(
                 Role::Bishop,
                 from,
                 to,
-                pos.board().peek_role_checked(to),
+                board.peek_role_checked(to),
             ));
         });
     });
@@ -210,7 +190,7 @@ fn gen_pinned_quiet_and_capture_moves(
                 Role::Rook,
                 from,
                 to,
-                pos.board().peek_role_checked(to),
+                board.peek_role_checked(to),
             ));
         });
     });
@@ -234,7 +214,7 @@ fn gen_pinned_quiet_and_capture_moves(
                 Role::Queen,
                 from,
                 to,
-                pos.board().peek_role_checked(to),
+                board.peek_role_checked(to),
             ));
         });
     });
@@ -242,7 +222,7 @@ fn gen_pinned_quiet_and_capture_moves(
 
 #[allow(clippy::too_many_arguments)]
 fn gen_unpinned_quiet_and_capture_moves(
-    pos: &Position,
+    board: &Board,
     us: Color,
     pawns: Bitboard,
     knights: Bitboard,
@@ -251,34 +231,52 @@ fn gen_unpinned_quiet_and_capture_moves(
     queens: Bitboard,
     moves: &mut MoveList,
 ) {
-    let friendly = pos.board().by_color(us);
-    let enemy = pos.board().by_color(!us);
-    let occupied = pos.board().occupied();
+    let friendly = board.by_color(us);
+    let enemy = board.by_color(!us);
+    let occupied = board.occupied();
     let empty = !occupied;
 
-    let (push_dir, cap_left_dir, cap_right_dir, double_push_rank, prom_rank) = match us {
+    let (
+        push_dir,
+        push_dir_invert_offset,
+        cap_left_dir,
+        cap_left_dir_invert_offset,
+        cap_right_dir,
+        cap_right_dir_invert_offset,
+        double_push_rank,
+        prom_rank,
+    ) = match us {
         Color::White => (
             Direction::North,
+            Direction::North.invert().offset(),
             Direction::NorthWest,
+            Direction::NorthWest.invert().offset(),
             Direction::NorthEast,
+            Direction::NorthEast.invert().offset(),
             RANK_2,
             RANK_8,
         ),
         Color::Black => (
             Direction::South,
+            Direction::South.invert().offset(),
             Direction::SouthWest,
+            Direction::SouthWest.invert().offset(),
             Direction::SouthEast,
+            Direction::SouthEast.invert().offset(),
             RANK_7,
             RANK_1,
         ),
     };
 
+    let push_dir_invert_offset_2x = push_dir_invert_offset * 2;
+
     let single = pawns.shift_dir(push_dir) & empty;
     let quiet = single & !prom_rank;
+
     quiet.for_each(|from| {
         moves.push(Move::quiet(
             Role::Pawn,
-            from.offset_checked(push_dir.invert().offset()),
+            from.offset_checked(push_dir_invert_offset),
             from,
         ));
     });
@@ -289,7 +287,7 @@ fn gen_unpinned_quiet_and_capture_moves(
     double.for_each(|from| {
         moves.push(Move::quiet(
             Role::Pawn,
-            from.offset_checked(push_dir.invert().offset() * 2),
+            from.offset_checked(push_dir_invert_offset_2x),
             from,
         ));
     });
@@ -299,10 +297,10 @@ fn gen_unpinned_quiet_and_capture_moves(
 
     let no_prom_cap_left = cap_left & !prom_rank;
     no_prom_cap_left.for_each(|cap| {
-        let enemy_role = pos.board().peek_role_checked(cap);
+        let enemy_role = board.peek_role_checked(cap);
         moves.push(Move::capture(
             Role::Pawn,
-            cap.offset_checked(cap_left_dir.invert().offset()),
+            cap.offset_checked(cap_left_dir_invert_offset),
             cap,
             enemy_role,
         ));
@@ -310,106 +308,54 @@ fn gen_unpinned_quiet_and_capture_moves(
 
     let no_prom_cap_right = cap_right & !prom_rank;
     no_prom_cap_right.for_each(|cap| {
-        let enemy_role = pos.board().peek_role_checked(cap);
+        let enemy_role = board.peek_role_checked(cap);
         moves.push(Move::capture(
             Role::Pawn,
-            cap.offset_checked(cap_right_dir.invert().offset()),
+            cap.offset_checked(cap_right_dir_invert_offset),
             cap,
             enemy_role,
         ));
     });
 
-    let promo_push = single & prom_rank;
-    promo_push.for_each(|promo| {
-        moves.push(Move::promotion(
-            promo.offset_checked(push_dir.invert().offset()),
-            promo,
-            Role::Queen,
-        ));
-
-        moves.push(Move::promotion(
-            promo.offset_checked(push_dir.invert().offset()),
-            promo,
-            Role::Rook,
-        ));
-
-        moves.push(Move::promotion(
-            promo.offset_checked(push_dir.invert().offset()),
-            promo,
-            Role::Bishop,
-        ));
-
-        moves.push(Move::promotion(
-            promo.offset_checked(push_dir.invert().offset()),
-            promo,
-            Role::Knight,
-        ));
+    let prom_push = single & prom_rank;
+    prom_push.for_each(|promo| {
+        let prom_sqr_orig = promo.offset_checked(push_dir_invert_offset);
+        moves.push(Move::prom(prom_sqr_orig, promo, Role::Queen));
+        moves.push(Move::prom(prom_sqr_orig, promo, Role::Rook));
+        moves.push(Move::prom(prom_sqr_orig, promo, Role::Bishop));
+        moves.push(Move::prom(prom_sqr_orig, promo, Role::Knight));
     });
 
-    let cap_left_promo = cap_left & prom_rank;
-    cap_left_promo.for_each(|cap_promo| {
-        let enemy_role = pos.board().peek_role_checked(cap_promo);
+    let cap_left_prom = cap_left & prom_rank;
+    cap_left_prom.for_each(|cap_prom| {
+        let enemy_role = board.peek_role_checked(cap_prom);
+        let cap_prom_sqr_orig = cap_prom.offset_checked(cap_left_dir_invert_offset);
 
-        moves.push(Move::capture_promotion(
-            cap_promo.offset_checked(cap_left_dir.invert().offset()),
-            cap_promo,
-            enemy_role,
-            Role::Queen,
-        ));
+        let prom_q = Move::cap_prom(cap_prom_sqr_orig, cap_prom, enemy_role, Role::Queen);
+        let prom_r = Move::cap_prom(cap_prom_sqr_orig, cap_prom, enemy_role, Role::Rook);
+        let prom_b = Move::cap_prom(cap_prom_sqr_orig, cap_prom, enemy_role, Role::Bishop);
+        let prom_n = Move::cap_prom(cap_prom_sqr_orig, cap_prom, enemy_role, Role::Knight);
 
-        moves.push(Move::capture_promotion(
-            cap_promo.offset_checked(cap_left_dir.invert().offset()),
-            cap_promo,
-            enemy_role,
-            Role::Rook,
-        ));
-
-        moves.push(Move::capture_promotion(
-            cap_promo.offset_checked(cap_left_dir.invert().offset()),
-            cap_promo,
-            enemy_role,
-            Role::Bishop,
-        ));
-
-        moves.push(Move::capture_promotion(
-            cap_promo.offset_checked(cap_left_dir.invert().offset()),
-            cap_promo,
-            enemy_role,
-            Role::Knight,
-        ));
+        moves.push(prom_q);
+        moves.push(prom_r);
+        moves.push(prom_b);
+        moves.push(prom_n);
     });
 
-    let cap_right_promo = cap_right & prom_rank;
-    cap_right_promo.for_each(|cap_promo| {
-        let enemy_role = pos.board().peek_role_checked(cap_promo);
+    let cap_right_prom = cap_right & prom_rank;
+    cap_right_prom.for_each(|cap_prom| {
+        let enemy_role = board.peek_role_checked(cap_prom);
+        let cap_prom_sqr_orig = cap_prom.offset_checked(cap_right_dir_invert_offset);
 
-        moves.push(Move::capture_promotion(
-            cap_promo.offset_checked(cap_right_dir.invert().offset()),
-            cap_promo,
-            enemy_role,
-            Role::Queen,
-        ));
+        let prom_q = Move::cap_prom(cap_prom_sqr_orig, cap_prom, enemy_role, Role::Queen);
+        let prom_r = Move::cap_prom(cap_prom_sqr_orig, cap_prom, enemy_role, Role::Rook);
+        let prom_b = Move::cap_prom(cap_prom_sqr_orig, cap_prom, enemy_role, Role::Bishop);
+        let prom_n = Move::cap_prom(cap_prom_sqr_orig, cap_prom, enemy_role, Role::Knight);
 
-        moves.push(Move::capture_promotion(
-            cap_promo.offset_checked(cap_right_dir.invert().offset()),
-            cap_promo,
-            enemy_role,
-            Role::Rook,
-        ));
-
-        moves.push(Move::capture_promotion(
-            cap_promo.offset_checked(cap_right_dir.invert().offset()),
-            cap_promo,
-            enemy_role,
-            Role::Bishop,
-        ));
-
-        moves.push(Move::capture_promotion(
-            cap_promo.offset_checked(cap_right_dir.invert().offset()),
-            cap_promo,
-            enemy_role,
-            Role::Knight,
-        ));
+        moves.push(prom_q);
+        moves.push(prom_r);
+        moves.push(prom_b);
+        moves.push(prom_n);
     });
 
     knights.for_each(|from| {
@@ -422,7 +368,7 @@ fn gen_unpinned_quiet_and_capture_moves(
 
         let captures = attacks & enemy;
         captures.for_each(|to| {
-            let enemy_role = pos.board().peek_role_checked(to);
+            let enemy_role = board.peek_role_checked(to);
             moves.push(Move::capture(Role::Knight, from, to, enemy_role));
         });
     });
@@ -439,7 +385,7 @@ fn gen_unpinned_quiet_and_capture_moves(
         });
 
         captures.for_each(|to| {
-            let enemy_role = pos.board().peek_role_checked(to);
+            let enemy_role = board.peek_role_checked(to);
             moves.push(Move::capture(Role::Bishop, from, to, enemy_role));
         });
     });
@@ -456,7 +402,7 @@ fn gen_unpinned_quiet_and_capture_moves(
         });
 
         captures.for_each(|to| {
-            let enemy_role = pos.board().peek_role_checked(to);
+            let enemy_role = board.peek_role_checked(to);
             moves.push(Move::capture(Role::Rook, from, to, enemy_role));
         });
     });
@@ -473,21 +419,20 @@ fn gen_unpinned_quiet_and_capture_moves(
         });
 
         captures.for_each(|to| {
-            let enemy_role = pos.board().peek_role_checked(to);
+            let enemy_role = board.peek_role_checked(to);
             moves.push(Move::capture(Role::Queen, from, to, enemy_role));
         });
     });
 }
 
-fn gen_castling_moves(pos: &Position, us: Color, moves: &mut MoveList) {
+fn gen_castling_moves(board: &Board, castling_rights: Castlings, us: Color, moves: &mut MoveList) {
     let enemy = !us;
-    let board = pos.board();
 
     let king_sqr = board.the_king(us);
 
     let occupied = board.occupied();
 
-    if pos.castling_rights().short(us) {
+    if castling_rights.short(us) {
         let f = Square::from_u32_checked(king_sqr.as_u32() + 1);
         let g = Square::from_u32_checked(king_sqr.as_u32() + 2);
         let rook = Square::from_u32_checked(king_sqr.as_u32() + 3);
@@ -505,7 +450,7 @@ fn gen_castling_moves(pos: &Position, us: Color, moves: &mut MoveList) {
         }
     }
 
-    if pos.castling_rights().long(us) {
+    if castling_rights.long(us) {
         let d = Square::from_u32_checked(king_sqr.as_u32() - 1);
         let c = Square::from_u32_checked(king_sqr.as_u32() - 2);
         let b = Square::from_u32_checked(king_sqr.as_u32() - 3);
@@ -530,13 +475,21 @@ pub fn gen_ep_moves(pos: &Position, us: Color, moves: &mut MoveList) {
         return;
     };
 
-    let enemy = !us;
-    let king_sqr = pos.board().the_king(us);
-    let pawns = pos.board().pawns(us);
+    let board = pos.board();
+    let occupied = board.occupied();
 
-    let enemy_rooks = pos.board().rooks(enemy);
-    let enemy_bishops = pos.board().bishops(enemy);
-    let enemy_queens = pos.board().queens(enemy);
+    let enemy = !us;
+
+    let king_sqr = board.the_king(us);
+    let pawns = board.pawns(us);
+
+    let enemy_bishops = board.bishops(enemy);
+    let enemy_rooks = board.rooks(enemy);
+    let enemy_queens = board.queens(enemy);
+
+    let enemies = enemy_bishops | enemy_rooks | enemy_queens;
+
+    let enemy_pawn = Piece::of(Role::Pawn, enemy);
 
     pawns.for_each(|from| {
         if lookup::pawn_attacks(us, from) & (1 << ep.as_u32()) == 0 {
@@ -545,16 +498,14 @@ pub fn gen_ep_moves(pos: &Position, us: Color, moves: &mut MoveList) {
 
         let captured = Square::of(ep.file(), from.rank());
 
-        if pos.board().peek(captured) != Some(Piece::of(Role::Pawn, enemy)) {
+        if board.peek(captured) != Some(enemy_pawn) {
             return;
         }
 
-        let legal = if (enemy_bishops | enemy_rooks | enemy_queens).empty() {
+        let legal = if enemies.empty() {
             true
         } else {
-            let occupied = pos
-                .board()
-                .occupied()
+            let occupied = occupied
                 .clear_square(from)
                 .clear_square(captured)
                 .set_square(ep);
@@ -585,7 +536,9 @@ fn gen_evasions(
     pinned: Bitboard,
     moves: &mut MoveList,
 ) {
-    gen_king_moves(pos, us, king_sqr, moves);
+    let board = pos.board();
+
+    gen_king_moves(board, us, king_sqr, moves);
 
     // although we already know the existence of checker due to call site
     // let-else is more performant than panicking alternative
@@ -595,14 +548,12 @@ fn gen_evasions(
 
     let evasion_mask = lookup::ray_between(king_sqr, checker).to_bb();
 
-    gen_blocking_moves(pos, us, evasion_mask, checker, pinned, moves);
+    gen_blocking_moves(board, us, evasion_mask, checker, pinned, moves);
     gen_ep_evasions(pos, us, checker, pinned, moves);
 }
 
 // NOTE consider calculating via enemy piece attack maps in order to avoid branches
-fn gen_king_moves(pos: &Position, us: Color, king_sqr: Square, moves: &mut MoveList) {
-    let board = pos.board();
-
+fn gen_king_moves(board: &Board, us: Color, king_sqr: Square, moves: &mut MoveList) {
     let friendly = board.by_color(us);
     let enemy = board.by_color(!us);
 
@@ -610,14 +561,14 @@ fn gen_king_moves(pos: &Position, us: Color, king_sqr: Square, moves: &mut MoveL
 
     let quiet = attacks & !friendly & !enemy;
     quiet.for_each(|to| {
-        if king_move_is_safe(pos, us, king_sqr, to) {
+        if king_move_is_safe(board, us, king_sqr, to) {
             moves.push(Move::quiet(Role::King, king_sqr, to));
         }
     });
 
     let captures = attacks & enemy;
     captures.for_each(|to| {
-        if king_move_is_safe(pos, us, king_sqr, to) {
+        if king_move_is_safe(board, us, king_sqr, to) {
             moves.push(Move::capture(
                 Role::King,
                 king_sqr,
@@ -629,14 +580,13 @@ fn gen_king_moves(pos: &Position, us: Color, king_sqr: Square, moves: &mut MoveL
 }
 
 fn gen_blocking_moves(
-    pos: &Position,
+    board: &Board,
     us: Color,
     evasion_mask: Bitboard,
     checker: Square,
     pinned: Bitboard,
     moves: &mut MoveList,
 ) {
-    let board = pos.board();
     let occupied = board.occupied();
 
     let rooks = board.rooks(us) & !pinned;
@@ -647,7 +597,7 @@ fn gen_blocking_moves(
 
     let capture_mask = checker.to_bb();
 
-    let checker_role = pos.board().peek_role_checked(checker);
+    let checker_role = board.peek_role_checked(checker);
 
     pawns.for_each(|pawn| {
         let pawn_pushes = lookup::pawn_pushes(us, pawn).to_bb() & evasion_mask;
@@ -655,7 +605,7 @@ fn gen_blocking_moves(
             let promotion_rank = push.rank() == Rank::First || push.rank() == Rank::Eighth;
             if promotion_rank {
                 for role in [Role::Queen, Role::Rook, Role::Bishop, Role::Knight] {
-                    moves.push(Move::promotion(pawn, push, role));
+                    moves.push(Move::prom(pawn, push, role));
                 }
             } else {
                 moves.push(Move::quiet(Role::Pawn, pawn, push));
@@ -678,7 +628,7 @@ fn gen_blocking_moves(
 
             if promotion_rank {
                 for role in [Role::Queen, Role::Rook, Role::Bishop, Role::Knight] {
-                    moves.push(Move::capture_promotion(pawn, checker, checker_role, role));
+                    moves.push(Move::cap_prom(pawn, checker, checker_role, role));
                 }
             } else {
                 moves.push(Move::capture(Role::Pawn, pawn, checker, checker_role));
@@ -737,6 +687,8 @@ fn gen_ep_evasions(
         return;
     };
 
+    let board = pos.board();
+
     let target_pawn = Square::of(
         ep_sqr.file(),
         if us == Color::White {
@@ -750,15 +702,15 @@ fn gen_ep_evasions(
         return;
     }
 
-    let pawns = pos.board().pawns(us) & lookup::pawn_attacks(!us, ep_sqr).to_bb();
-    let king_sqr = pos.board().the_king(us);
+    let pawns = board.pawns(us) & lookup::pawn_attacks(!us, ep_sqr).to_bb();
+    let king_sqr = board.the_king(us);
 
     pawns.for_each(|pawn| {
         if pinned.is_square_set(pawn) {
             return;
         }
 
-        let enemy_sliders = pos.board().rooks(!us) | pos.board().queens(!us);
+        let enemy_sliders = board.rooks(!us) | board.queens(!us);
 
         let legal = if enemy_sliders.empty() {
             true
@@ -782,11 +734,11 @@ fn gen_ep_evasions(
     });
 }
 
-fn king_move_is_safe(pos: &Position, us: Color, from: Square, to: Square) -> bool {
+// FINAL: no need to optimize further
+fn king_move_is_safe(board: &Board, us: Color, from: Square, to: Square) -> bool {
     let enemy = !us;
-    let board = pos.board();
 
-    let occupied = pos.board().occupied().clear_square(from).set_square(to);
+    let occupied = board.occupied().clear_square(from).set_square(to);
 
     let queens = board.queens(enemy);
     let pawns = board.pawns(enemy);

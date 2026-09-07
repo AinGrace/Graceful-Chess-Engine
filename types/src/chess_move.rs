@@ -90,7 +90,7 @@ impl Move {
         }
     }
 
-    pub fn promotion(from: Square, to: Square, promotion: Role) -> Self {
+    pub fn prom(from: Square, to: Square, promotion: Role) -> Self {
         Self::Standard {
             role: Role::Pawn,
             from,
@@ -100,7 +100,7 @@ impl Move {
         }
     }
 
-    pub fn capture_promotion(from: Square, to: Square, capture: Role, promotion: Role) -> Self {
+    pub fn cap_prom(from: Square, to: Square, capture: Role, promotion: Role) -> Self {
         Self::Standard {
             role: Role::Pawn,
             from,

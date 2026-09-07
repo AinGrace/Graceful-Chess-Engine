@@ -12,7 +12,8 @@ const AVG_MOVES_PER_GAME: u32 = 40;
 /// Buffer to account for IO overhead
 const LAG_BUFFER_MILLIS: u32 = 30;
 
-const FLOOR_MS: u32 = 300;
+/// Min possible value for the remaining time
+const FLOOR_MS: u32 = 100;
 
 #[derive(Debug)]
 pub struct TimeControl {
