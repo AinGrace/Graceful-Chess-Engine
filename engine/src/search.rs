@@ -203,6 +203,7 @@ fn negamax(
     nodes: &mut u64,
 ) -> NegamaxResult {
     if nodes.trailing_zeros() == 16 && time_control.hard_expired() {
+        println!("hard limit SOS");
         return NegamaxResult::new_abort(*nodes);
     }
 
