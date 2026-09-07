@@ -11,7 +11,7 @@ use position::position::Position;
 use types::chess_move::Move;
 
 use crate::{
-    eval::{self, Score},
+    eval::{self, Score, static_eval_debug},
     mvv_lva,
     time_control::TimeControl,
     tt::TTOptions,
@@ -123,13 +123,20 @@ where
     let alpha = Score::Mate(-1);
     let beta = Score::Mate(1);
 
-    let mut previous_depth_time = time_control.elapsed_from_start();
-    let mut next_depth_prediction = Duration::from_millis(0);
+    let mut previous_depth_time = Duration::ZERO;
+    let mut next_depth_prediction = Duration::ZERO;
 
     for curr_depth in 1..=search_depth {
-        if time_control.soft_expired()
-            || time_control.elapsed_from_start() + next_depth_prediction > time_control.soft_limit
-        {
+        // println!();
+        // println!(
+        //     "depth prediction vs soft limit: {:?} - {:?}",
+        //     next_depth_prediction, time_control.soft_limit
+        // );
+        if time_control.soft_expired() || next_depth_prediction > time_control.soft_limit {
+            // println!(
+            //     "returning due to soft limit, curr elapsed -> {:?}",
+            //     time_control.elapsed_from_start()
+            // );
             return result;
         }
 
@@ -143,13 +150,13 @@ where
             &time_control,
             &mut 0,
         );
+        let elapsed_till_res = time_control.elapsed_from_start();
 
-        if !previous_depth_time.is_zero() {
+        if curr_depth >= 5 {
             let curr_cumulative = time_control.elapsed_from_start();
             let curr_depth_time = curr_cumulative - previous_depth_time;
             let delta = curr_depth_time.div_duration_f64(previous_depth_time);
             next_depth_prediction = curr_depth_time.mul_f64(delta);
-            previous_depth_time = curr_cumulative;
         }
 
         if time_control.soft_limit != Duration::MAX {
@@ -163,7 +170,10 @@ where
         }
 
         if current_result.is_aborted() {
-            f(&result);
+            // println!(
+            //     "returning due to abort, curr elapsed -> {:?}",
+            //     elapsed_till_res
+            // );
             return result;
         }
 
@@ -176,8 +186,18 @@ where
         f(&result);
 
         if time_control.soft_expired() {
+            // println!(
+            //     "returning due to soft limit, curr elapsed -> {:?}",
+            //     time_control.elapsed_from_start()
+            // );
             return result;
         }
+
+        // println!("\t-> previous depth time: {previous_depth_time:?}");
+        // println!("\t-> next depth prediction {next_depth_prediction:?}");
+        // println!();
+
+        previous_depth_time = time_control.elapsed_from_start();
     }
 
     result
@@ -186,7 +206,7 @@ where
 fn should_extend(prev_score: &Score, cur_score: &Score, best_move_changed: bool) -> f64 {
     let mut factor = 1.0;
 
-    if *cur_score < *prev_score - 30 {
+    if *cur_score < *prev_score - 100 {
         factor *= 1.3;
     }
 

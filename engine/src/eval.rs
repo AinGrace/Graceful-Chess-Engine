@@ -223,6 +223,64 @@ pub fn static_eval(pos: &Position) -> Score {
     }
 }
 
+pub struct EvalDetails {
+    is_checkmate: bool,
+    is_stalemate: bool,
+    mobility: i16,
+    material: i16,
+    pst: i16,
+    total: i16,
+}
+
+impl Display for EvalDetails {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "is_checkmate: {}", self.is_checkmate)?;
+        writeln!(f, "is_stalemate: {}", self.is_stalemate)?;
+        writeln!(f, "mobility: {}", self.mobility)?;
+        writeln!(f, "material: {}", self.material)?;
+        writeln!(f, "pst: {}", self.pst)?;
+        writeln!(f, "total: {}", self.total)
+    }
+}
+
+pub fn static_eval_debug(pos: &Position) -> EvalDetails {
+    let mut res = EvalDetails {
+        is_checkmate: false,
+        is_stalemate: false,
+        mobility: 0,
+        material: 0,
+        pst: 0,
+        total: 0,
+    };
+
+    if pos.is_checkmate() {
+        res.is_checkmate = true;
+        return res;
+    } else if pos.is_stalemate() {
+        res.is_stalemate = true;
+        return res;
+    }
+
+    let mobility = mobility(pos);
+    let material = material_score(pos);
+    let pst = calculate_pst_score(pos);
+
+    let score = mobility + material + pst;
+
+    res.mobility = mobility;
+    res.material = material;
+    res.pst = pst;
+    res.total = score;
+
+    if pos.turn() == Color::White {
+        res.total = res.total;
+    } else {
+        res.total = -res.total;
+    }
+
+    res
+}
+
 pub fn eval_see(board: &mut Board, dest: Square, us: Color) -> i16 {
     let mut eval = 0;
 
@@ -357,7 +415,7 @@ fn calculate_pst_score(pos: &Position) -> i16 {
 }
 
 /// in endgame where only a few pieces remain kings are encouraged to be close to each other
-/// 
+///
 /// apply score penalty otherwise
 fn king_dist_eval(board: &Board, us: Color) -> i16 {
     let non_king_pieces =

@@ -136,17 +136,18 @@ impl<W: Write + Send, R: BufRead> Uci<W, R> {
     fn handle_go_inner(&self, depth: Option<u8>, time_control_kind: GoTimeControlKind) {
         let intermediate_writer = Arc::clone(&self.writer);
         let final_writer = Arc::clone(&self.writer);
+        let time_control = TimeControl::new(time_control_kind.into(), self.engine.pos());
+
+        // Self::send(
+        //     format!("\n{time_control}"),
+        //     &mut *self.writer.lock().expect("FATAL"),
+        // );
 
         self.engine.search(
             depth,
-            TimeControl::new(time_control_kind.into(), self.engine.pos()),
+            time_control,
             move |res| {
                 let mut writer = intermediate_writer.lock().expect("FATAL");
-
-                if res.is_aborted() {
-                    info!("hard limit SOS");
-                    return;
-                }
 
                 Self::send(
                     format!(

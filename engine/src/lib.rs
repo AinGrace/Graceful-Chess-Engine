@@ -3,7 +3,7 @@ use std::{
         Arc,
         atomic::{AtomicBool, Ordering},
     },
-    thread, time::Instant,
+    thread,
 };
 
 use position::position::{InvalidMoveError, Position, Undo};

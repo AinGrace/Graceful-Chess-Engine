@@ -13,7 +13,7 @@ const AVG_MOVES_PER_GAME: u32 = 40;
 const LAG_BUFFER_MILLIS: u32 = 30;
 
 /// Min possible value for the remaining time
-const FLOOR_MS: u32 = 100;
+const FLOOR_MS: u32 = 10;
 
 #[derive(Debug)]
 pub struct TimeControl {
@@ -21,15 +21,14 @@ pub struct TimeControl {
     pub soft_limit: Duration,
     pub hard_limit: Duration,
 
-    pub remaining_millis: u32,
+    pub remaining: u32,
     pub increment: u32,
-
-    pub is_infinite: bool,
 }
 
+// FIXME: check if soft gets invoked, check the distance between soft and hard limits, reevaluate the time calculation
 impl TimeControl {
     pub fn new(kind: TimeControlKind, pos: &Position) -> Self {
-        let (remaining_millis, increment) = match (&kind, pos.turn()) {
+        let (total_allocation, increment) = match (&kind, pos.turn()) {
             (TimeControlKind::Infinite, _) => return Self::new_infinite(),
 
             (TimeControlKind::SuddenDeath { w_time, .. }, Color::White) => (*w_time, 0),
@@ -39,13 +38,13 @@ impl TimeControl {
             (TimeControlKind::Increment { b_time, b_inc, .. }, Color::Black) => (*b_time, *b_inc),
         };
 
-        let remaining_millis = remaining_millis.saturating_sub(LAG_BUFFER_MILLIS);
+        let remaining_millis = total_allocation.saturating_sub(LAG_BUFFER_MILLIS);
 
         let soft_limit = if remaining_millis < 1000 {
             let base = cmp::max(remaining_millis / 20, FLOOR_MS);
             Duration::from_millis((base + increment * 3 / 4) as u64)
         } else {
-            let move_count = AVG_MOVES_PER_GAME.saturating_sub(pos.full_moves()).max(10);
+            let move_count = AVG_MOVES_PER_GAME.saturating_sub(pos.full_moves()).max(5);
             let base = (remaining_millis / move_count) as u64;
             Duration::from_millis(base + increment as u64 * 3 / 4)
         };
@@ -59,9 +58,8 @@ impl TimeControl {
             started: Instant::now(),
             soft_limit,
             hard_limit,
-            remaining_millis,
+            remaining: remaining_millis,
             increment,
-            is_infinite: false,
         };
 
         res
@@ -72,9 +70,8 @@ impl TimeControl {
             started: Instant::now(),
             soft_limit: Duration::MAX,
             hard_limit: Duration::MAX,
-            remaining_millis: u32::MAX,
+            remaining: u32::MAX,
             increment: u32::MAX,
-            is_infinite: true,
         }
     }
 
@@ -97,34 +94,21 @@ impl TimeControl {
     }
 
     pub fn increase_soft_by_factor(&mut self, factor: f64) {
-        if self.is_infinite {
+        if self.soft_limit == Duration::MAX {
             return;
         }
 
-        self.soft_limit = self.soft_limit.mul_f64(factor);
+        self.soft_limit = self.soft_limit.mul_f64(factor).min(self.hard_limit);
     }
 }
 
 impl Display for TimeControl {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, "Time control config: ")?;
-        writeln!(
-            f,
-            "    total time: {:<10}",
-            format!("{:?}", self.remaining_millis),
-        )?;
-        writeln!(f, "    increment:  {:<10}", format!("{:?}", self.increment),)?;
-        writeln!(
-            f,
-            "    soft:       {:<10}",
-            format!("{:?}", self.soft_limit),
-        )?;
-        writeln!(
-            f,
-            "    hard:       {:<10}",
-            format!("{:?}", self.hard_limit),
-        )?;
-        writeln!(f, "---------------------")
+        writeln!(f, "remaining:  {:<10}", format!("{:?}", self.remaining))?;
+        writeln!(f, "lag buffer: {:<10}", LAG_BUFFER_MILLIS)?;
+        writeln!(f, "increment:  {:<10}", format!("{:?}", self.increment),)?;
+        writeln!(f, "soft:       {:<10}", format!("{:?}", self.soft_limit),)?;
+        writeln!(f, "hard:       {:<10}", format!("{:?}", self.hard_limit),)
     }
 }
 
