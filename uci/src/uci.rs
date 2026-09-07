@@ -142,6 +142,12 @@ impl<W: Write + Send, R: BufRead> Uci<W, R> {
             TimeControl::new(time_control_kind.into(), self.engine.pos()),
             move |res| {
                 let mut writer = intermediate_writer.lock().expect("FATAL");
+
+                if res.is_aborted() {
+                    info!("hard limit SOS");
+                    return;
+                }
+
                 Self::send(
                     format!(
                         "info depth {} {} nodes {} nps {} time {}",

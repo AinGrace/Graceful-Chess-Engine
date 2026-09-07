@@ -7,7 +7,7 @@ use std::{
     time::Duration,
 };
 
-use position::{position::Position};
+use position::position::Position;
 use types::chess_move::Move;
 
 use crate::{
@@ -65,6 +65,10 @@ impl SearchResult {
             nps,
             elapsed_millis,
         }
+    }
+
+    pub fn is_aborted(&self) -> bool {
+        matches!(self.score, Score::Abort)
     }
 }
 
@@ -159,6 +163,7 @@ where
         }
 
         if current_result.is_aborted() {
+            f(&result);
             return result;
         }
 
@@ -203,7 +208,6 @@ fn negamax(
     nodes: &mut u64,
 ) -> NegamaxResult {
     if nodes.trailing_zeros() == 16 && time_control.hard_expired() {
-        println!("hard limit SOS");
         return NegamaxResult::new_abort(*nodes);
     }
 
