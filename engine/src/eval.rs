@@ -4,7 +4,12 @@ use std::{
 };
 
 use position::{board::Board, position::Position};
-use types::{color::Color, piece::Piece, role::Role, square::Square};
+use types::{
+    color::{self, Color},
+    piece::Piece,
+    role::Role,
+    square::Square,
+};
 
 use crate::eval::constants::{
     BISHOP_PST, BISHOP_VALUE, KING_END_GAME_PST, KING_MIDDLE_GAME_PST, KING_PENALTY_FACTOR,
@@ -40,7 +45,6 @@ pub(crate) mod constants {
          0,  0,  0,  0,  0,  0,  0,  0
     ];
 
-
     pub const KNIGHT_PST: [i16; 64] = [
        -50,-40,-30,-30,-30,-30,-40,-50,
        -40,-20,  0,  0,  0,  0,-20,-40,
@@ -51,7 +55,6 @@ pub(crate) mod constants {
        -40,-20,  0,  5,  5,  0,-20,-40,
        -50,-40,-30,-30,-30,-30,-40,-50,
     ];
-
 
     pub const BISHOP_PST: [i16; 64] = [
        -20,-10,-10,-10,-10,-10,-10,-20,
@@ -64,10 +67,9 @@ pub(crate) mod constants {
        -20,-10,-10,-10,-10,-10,-10,-20
     ];
 
-
     pub const ROOK_PST: [i16; 64] = [
         0,  0,  0,  0,  0,  0,  0,  0,
-        5,  0,  0,  0,  0,  0,  0, -5,
+        5, 10, 10, 10, 10, 10, 10, -5,
        -5,  0,  0,  0,  0,  0,  0, -5,
        -5,  0,  0,  0,  0,  0,  0, -5,
        -5,  0,  0,  0,  0,  0,  0, -5,
@@ -75,7 +77,6 @@ pub(crate) mod constants {
        -5,  0,  0,  0,  0,  0,  0, -5,
         0,  0,  0,  5,  5,  0,  0,  0
     ];
-
 
     pub const QUEEN_PST: [i16; 64] = [
         -20,-10,-10, -5, -5,-10,-10,-20,
@@ -88,7 +89,6 @@ pub(crate) mod constants {
         -20,-10,-10, -5, -5,-10,-10,-20
     ];
 
-
     pub const KING_MIDDLE_GAME_PST: [i16; 64] = [
         -30,-40,-40,-50,-50,-40,-40,-30,
         -30,-40,-40,-50,-50,-40,-40,-30,
@@ -100,7 +100,6 @@ pub(crate) mod constants {
          20, 30, 10,  0,  0, 10, 30, 20
     ];
 
-    // TODO
     pub const KING_END_GAME_PST: [i16; 64] = [
         -50,-40,-30,-20,-20,-30,-40,-50,
         -30,-20,-10,  0,  0,-10,-20,-30,
@@ -112,6 +111,7 @@ pub(crate) mod constants {
         -50,-30,-30,-30,-30,-30,-30,-50
     ];
 }
+
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Score {
@@ -210,9 +210,10 @@ pub fn static_eval(pos: &Position) -> Score {
         return Score::Draw;
     }
 
+    let board = pos.board();
     let mobility = mobility(pos);
-    let material = material_score(pos);
-    let pst = calculate_pst_score(pos);
+    let material = material_score(board);
+    let pst = calculate_pst_score(board);
 
     let score = mobility + material + pst;
 
@@ -261,9 +262,10 @@ pub fn static_eval_debug(pos: &Position) -> EvalDetails {
         return res;
     }
 
+    let board = pos.board();
     let mobility = mobility(pos);
-    let material = material_score(pos);
-    let pst = calculate_pst_score(pos);
+    let material = material_score(board);
+    let pst = calculate_pst_score(board);
 
     let score = mobility + material + pst;
 
@@ -322,32 +324,64 @@ fn mobility(pos: &Position) -> i16 {
     (us.len() as isize - them.len() as isize) as i16
 }
 
-#[rustfmt::skip]
-fn material_score(pos: &Position) -> i16 {
-    let white = Color::White;
-    let black = Color::Black;
+fn is_endgame(board: &Board) -> bool {
+    let pieces = board.non_king_pieces_of(Color::White) & board.non_king_pieces_of(Color::Black);
 
-    let white_score =
-          pos.board().pawns(white).popcnt()     as i16 * PAWN_VALUE
-        + pos.board().knights(white).popcnt()   as i16 * KNIGHT_VALUE
-        + pos.board().bishops(white).popcnt()   as i16 * BISHOP_VALUE
-        + pos.board().rooks(white).popcnt()     as i16 * ROOK_VALUE
-        + pos.board().queens(white).popcnt()    as i16 * QUEEN_VALUE;
-
-    let black_score =
-          pos.board().pawns(black).popcnt()     as i16 * PAWN_VALUE
-        + pos.board().knights(black).popcnt()   as i16 * KNIGHT_VALUE
-        + pos.board().bishops(black).popcnt()   as i16 * BISHOP_VALUE
-        + pos.board().rooks(black).popcnt()     as i16 * ROOK_VALUE
-        + pos.board().queens(black).popcnt()    as i16 * QUEEN_VALUE;
-
-    (white_score as i16) - (black_score as i16)
+    if pieces.popcnt() <= 4
+        || (material_score_of_white(board) < 1300 && material_score_of_black(board) < 1300)
+    {
+        true
+    } else {
+        false
+    }
 }
 
-fn calculate_pst_score(pos: &Position) -> i16 {
+#[rustfmt::skip]
+fn material_score_of_white(board: &Board) -> i16 {
+    let us = Color::White;
+
+    let pawns   = board.pawns(us);
+    let knights = board.knights(us);
+    let bishops = board.bishops(us);
+    let rooks   = board.rooks(us);
+    let queens  = board.queens(us);
+
+    let pawns_score   = pawns.popcnt()   as i16 * PAWN_VALUE;
+    let knights_score = knights.popcnt() as i16 * KNIGHT_VALUE;
+    let bishops_score = bishops.popcnt() as i16 * BISHOP_VALUE;
+    let rooks_score   = rooks.popcnt()   as i16 * ROOK_VALUE;
+    let queens_score  = queens.popcnt()  as i16 * QUEEN_VALUE;
+
+    pawns_score + knights_score + bishops_score + rooks_score + queens_score
+}
+
+#[rustfmt::skip]
+fn material_score_of_black(board: &Board) -> i16 {
+    let us = Color::Black;
+
+    let pawns   = board.pawns(us);
+    let knights = board.knights(us);
+    let bishops = board.bishops(us);
+    let rooks   = board.rooks(us);
+    let queens  = board.queens(us);
+
+    let pawns_score   = pawns.popcnt()   as i16 * PAWN_VALUE;
+    let knights_score = knights.popcnt() as i16 * KNIGHT_VALUE;
+    let bishops_score = bishops.popcnt() as i16 * BISHOP_VALUE;
+    let rooks_score   = rooks.popcnt()   as i16 * ROOK_VALUE;
+    let queens_score  = queens.popcnt()  as i16 * QUEEN_VALUE;
+
+    pawns_score + knights_score + bishops_score + rooks_score + queens_score
+}
+
+#[rustfmt::skip]
+fn material_score(board: &Board) -> i16 {
+    material_score_of_white(board) - material_score_of_black(board)
+}
+
+fn calculate_pst_score(board: &Board) -> i16 {
     let white = Color::White;
     let black = Color::Black;
-    let board = pos.board();
 
     let mut score = 0;
 
@@ -373,7 +407,7 @@ fn calculate_pst_score(pos: &Position) -> i16 {
         .for_each(|queen| score += calculate_piece_pst(&QUEEN_PST, queen, white));
 
     board.king(white).for_each(|king| {
-        if pos.board().is_endgame() {
+        if is_endgame(board) {
             score += calculate_piece_pst(&KING_END_GAME_PST, king, white);
             score += king_dist_eval(board, white);
         } else {
@@ -403,7 +437,7 @@ fn calculate_pst_score(pos: &Position) -> i16 {
         .for_each(|queen| score += calculate_piece_pst(&QUEEN_PST, queen, black));
 
     board.king(black).for_each(|king| {
-        if pos.board().is_endgame() {
+        if is_endgame(board) {
             score += calculate_piece_pst(&KING_END_GAME_PST, king, white);
             score += king_dist_eval(board, black);
         } else {

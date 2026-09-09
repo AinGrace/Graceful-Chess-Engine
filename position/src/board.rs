@@ -1,8 +1,4 @@
-use std::{
-    cmp::max,
-    fmt,
-    ops::Not,
-};
+use std::{cmp::max, fmt, ops::Not};
 
 use types::{
     bitboard::{Bitboard, ToBitboard},
@@ -18,7 +14,6 @@ use types::{
 
 #[derive(Clone, PartialEq, Eq)]
 pub struct Board {
-    occupied: Bitboard,
     by_role: ByRole<Bitboard>,
     by_color: ByColor<Bitboard>,
 }
@@ -37,13 +32,7 @@ impl Board {
 
         let by_color = ByColor::new(0x0000_0000_0000_ffff.to_bb(), 0xffff_0000_0000_0000.to_bb());
 
-        let occupied = 0xffff_0000_0000_ffff.to_bb();
-
-        Self {
-            occupied,
-            by_role,
-            by_color,
-        }
+        Self { by_role, by_color }
     }
 
     pub fn new_empty() -> Self {
@@ -58,18 +47,12 @@ impl Board {
 
         let by_color = ByColor::new(Bitboard::new_empty(), Bitboard::new_empty());
 
-        let occupied = Bitboard::new_empty();
-
-        Self {
-            occupied,
-            by_role,
-            by_color,
-        }
+        Self { by_role, by_color }
     }
 
     #[inline(always)]
     pub fn occupied(&self) -> Bitboard {
-        self.occupied
+        self.whites() | self.blacks()
     }
 
     #[inline(always)]
@@ -145,18 +128,10 @@ impl Board {
 
     #[inline(always)]
     pub fn non_king_pieces_of(&self, color: Color) -> Bitboard {
-        let pawns = self.pawns(color);
-        let knights = self.knights(color);
-        let bishops = self.bishops(color);
-        let rooks = self.rooks(color);
-        let queens = self.queens(color);
+        let king_sqr = self.the_king(color);
+        let our_pieces = self.by_color(color);
 
-        pawns | knights | bishops | rooks | queens
-    }
-
-    #[inline(always)]
-    pub fn is_endgame(&self) -> bool {
-        self.occupied().popcnt() <= 8
+        our_pieces.clear_square(king_sqr)
     }
 
     #[inline(always)]
@@ -317,8 +292,6 @@ impl Board {
 
         *role_bb = role_bb.set_square(square);
         *color_bb = color_bb.set_square(square);
-
-        self.occupied = self.occupied.set_square(square);
     }
 
     #[inline(always)]
@@ -329,8 +302,6 @@ impl Board {
 
             *role_bb = role_bb.clear_square(square);
             *color_bb = color_bb.clear_square(square);
-
-            self.occupied = self.occupied.clear_square(square);
         }
     }
 
@@ -343,8 +314,6 @@ impl Board {
 
         *role_bb = role_bb.clear_square(square);
         *color_bb = color_bb.clear_square(square);
-
-        self.occupied = self.occupied.clear_square(square);
     }
 
     #[must_use]
@@ -357,8 +326,6 @@ impl Board {
 
         *role_bb = role_bb.clear_square(square);
         *color_bb = color_bb.clear_square(square);
-
-        self.occupied = self.occupied.clear_square(square);
 
         Some(piece)
     }
@@ -373,8 +340,6 @@ impl Board {
 
         *role_bb = role_bb.clear_square(square);
         *color_bb = color_bb.clear_square(square);
-
-        self.occupied = self.occupied.clear_square(square);
 
         piece
     }

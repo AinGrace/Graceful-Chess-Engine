@@ -3,12 +3,37 @@ use std::sync::Arc;
 use parking_lot::Mutex;
 use types::chess_move::Move;
 
-use crate::{eval::Score, search::Bound};
+use crate::{eval::Score, search::Bound, tt::TTOptions::Enabled};
 
 #[derive(Clone)]
 pub enum TTOptions {
     Enabled(Arc<Mutex<TT>>),
     Disabled,
+}
+
+impl TTOptions {
+    pub fn probe(&self, z_hash: u64, depth: u8) -> Option<TTEntry> {
+        if let Enabled(tt) = self {
+            let tt = tt.lock();
+            tt.get(z_hash, depth).cloned()
+        } else {
+            None
+        }
+    }
+
+    pub fn insert(
+        &self,
+        z_hash: u64,
+        depth: u8,
+        score: Score,
+        best_move: Option<Move>,
+        bound: Bound,
+    ) {
+        if let Enabled(tt) = self {
+            let mut tt = tt.lock();
+            tt.insert(z_hash, depth, score, best_move, bound);
+        }
+    }
 }
 
 impl Default for TTOptions {

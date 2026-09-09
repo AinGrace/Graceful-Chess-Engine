@@ -19,6 +19,7 @@ use crate::{
     uci_io,
 };
 
+// TODO: Global statictic aggregator
 static ID_VALUES: &[&str] = &["id name Graceful", "id author AinGrace"];
 
 #[rustfmt::skip]

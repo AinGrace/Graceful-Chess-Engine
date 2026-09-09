@@ -127,16 +127,7 @@ where
     let mut next_depth_prediction = Duration::ZERO;
 
     for curr_depth in 1..=search_depth {
-        // println!();
-        // println!(
-        //     "depth prediction vs soft limit: {:?} - {:?}",
-        //     next_depth_prediction, time_control.soft_limit
-        // );
         if time_control.soft_expired() || next_depth_prediction > time_control.soft_limit {
-            // println!(
-            //     "returning due to soft limit, curr elapsed -> {:?}",
-            //     time_control.elapsed_from_start()
-            // );
             return result;
         }
 
@@ -150,7 +141,6 @@ where
             &time_control,
             &mut 0,
         );
-        let elapsed_till_res = time_control.elapsed_from_start();
 
         if curr_depth >= 5 {
             let curr_cumulative = time_control.elapsed_from_start();
@@ -170,10 +160,6 @@ where
         // }
 
         if current_result.is_aborted() {
-            // println!(
-            //     "returning due to abort, curr elapsed -> {:?}",
-            //     elapsed_till_res
-            // );
             return result;
         }
 
@@ -186,16 +172,8 @@ where
         f(&result);
 
         if time_control.soft_expired() {
-            // println!(
-            //     "returning due to soft limit, curr elapsed -> {:?}",
-            //     time_control.elapsed_from_start()
-            // );
             return result;
         }
-
-        // println!("\t-> previous depth time: {previous_depth_time:?}");
-        // println!("\t-> next depth prediction {next_depth_prediction:?}");
-        // println!();
 
         previous_depth_time = time_control.elapsed_from_start();
     }
@@ -227,7 +205,7 @@ fn negamax(
     time_control: &TimeControl,
     nodes: &mut u64,
 ) -> NegamaxResult {
-    if nodes.trailing_zeros() == 16 && time_control.hard_expired() {
+    if nodes.trailing_zeros() == 15 && time_control.hard_expired() {
         return NegamaxResult::new_abort(*nodes);
     }
 
@@ -246,27 +224,20 @@ fn negamax(
 
     let mut tt_move = None;
 
-    match tt_opts {
-        TTOptions::Enabled(tt) => {
-            let tt = tt.lock();
+    if let Some(entry) = tt_opts.probe(pos.zobrist_hash(), depth) {
+        tt_move = entry.best_move;
 
-            if let Some(entry) = tt.get(pos.zobrist_hash(), depth) {
-                tt_move = entry.best_move;
-
-                match entry.bound {
-                    Bound::Exact => {
-                        return NegamaxResult::new(entry.score, entry.best_move, *nodes);
-                    }
-                    Bound::Lower => alpha = max(alpha, entry.score),
-                    Bound::Upper => beta = min(beta, entry.score),
-                }
-
-                if alpha >= beta {
-                    return NegamaxResult::new(entry.score, entry.best_move, *nodes);
-                }
+        match entry.bound {
+            Bound::Exact => {
+                return NegamaxResult::new(entry.score, entry.best_move, *nodes);
             }
+            Bound::Lower => alpha = max(alpha, entry.score),
+            Bound::Upper => beta = min(beta, entry.score),
         }
-        TTOptions::Disabled => (),
+
+        if alpha >= beta {
+            return NegamaxResult::new(entry.score, entry.best_move, *nodes);
+        }
     }
 
     let moves = pos.legal_moves();
@@ -331,22 +302,13 @@ fn negamax(
         }
     }
 
-    {
-        match tt_opts {
-            TTOptions::Enabled(tt) => {
-                let mut tt = tt.lock();
-
-                tt.insert(
-                    pos.zobrist_hash(),
-                    depth,
-                    result.score,
-                    result.best_move,
-                    bound,
-                );
-            }
-            TTOptions::Disabled => (),
-        }
-    }
+    tt_opts.insert(
+        pos.zobrist_hash(),
+        depth,
+        result.score,
+        result.best_move,
+        bound,
+    );
 
     result.nodes = *nodes;
     result
@@ -361,7 +323,7 @@ fn quiesce(
     time_control: &TimeControl,
     nodes: &mut u64,
 ) -> NegamaxResult {
-    if nodes.trailing_zeros() == 16 && time_control.hard_expired() {
+    if nodes.trailing_zeros() == 15 && time_control.hard_expired() {
         return NegamaxResult::new_abort(*nodes);
     }
 
