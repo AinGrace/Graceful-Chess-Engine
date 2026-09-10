@@ -4,12 +4,7 @@ use std::{
 };
 
 use position::{board::Board, position::Position};
-use types::{
-    color::{self, Color},
-    piece::Piece,
-    role::Role,
-    square::Square,
-};
+use types::{color::Color, piece::Piece, role::Role, square::Square};
 
 use crate::eval::constants::{
     BISHOP_PST, BISHOP_VALUE, KING_END_GAME_PST, KING_MIDDLE_GAME_PST, KING_PENALTY_FACTOR,
@@ -112,7 +107,6 @@ pub(crate) mod constants {
     ];
 }
 
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Score {
     Centipawn(i16),
@@ -188,10 +182,10 @@ impl Display for Score {
             f,
             "{}",
             match self {
-                Score::Centipawn(val) => format!("score cp {}", val),
-                Score::Mate(val) => format!("score mate {}", val),
-                Score::Draw => format!("score cp 0"),
-                Score::Abort => format!("STOPPED"),
+                Score::Centipawn(val) => format!("cp {}", val),
+                Score::Mate(val) => format!("mate {}", val),
+                Score::Draw => format!("cp 0"),
+                Score::Abort => format!("ABORTED"),
             }
         )
     }

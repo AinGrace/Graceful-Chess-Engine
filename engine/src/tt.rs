@@ -34,6 +34,13 @@ impl TTOptions {
             tt.insert(z_hash, depth, score, best_move, bound);
         }
     }
+
+    pub fn clear(&self) {
+        if let Enabled(tt) = self {
+            let mut tt = tt.lock();
+            tt.clear();
+        }
+    }
 }
 
 impl Default for TTOptions {
@@ -42,7 +49,7 @@ impl Default for TTOptions {
     }
 }
 
-#[derive(Default, Clone, Debug)]
+#[derive(Default, Clone, Copy, Debug)]
 pub struct TTEntry {
     pub hash: u64,
     pub depth: u8,
@@ -99,6 +106,10 @@ impl TT {
 
     fn index(&self, hash: u64) -> usize {
         hash as usize & (self.size.next_power_of_two() - 1)
+    }
+
+    fn clear(&mut self) {
+        self.entries.fill(TTEntry::default());
     }
 }
 

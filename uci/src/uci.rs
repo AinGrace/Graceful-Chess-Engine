@@ -1,8 +1,11 @@
+use std::fs::File;
 use std::io::BufRead;
 use std::io::StdinLock;
 use std::io::Write;
 use std::io::stdin;
 use std::io::stdout;
+use std::path::Component::CurDir;
+use std::path::Path;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::MutexGuard;
@@ -19,7 +22,6 @@ use crate::{
     uci_io,
 };
 
-// TODO: Global statictic aggregator
 static ID_VALUES: &[&str] = &["id name Graceful", "id author AinGrace"];
 
 #[rustfmt::skip]
@@ -37,8 +39,10 @@ impl Uci<Stdout, StdinLock<'static>> {
 
 impl<W: Write + Send, R: BufRead> Uci<W, R> {
     pub fn new(writer: W, reader: R) -> Self {
+        let mut engine = Engine::default();
+        engine.collect_stats();
         Self {
-            engine: Engine::default(),
+            engine: engine,
             writer: Arc::new(writer.into()),
             reader,
         }
@@ -49,6 +53,15 @@ impl<W: Write + Send, R: BufRead> Uci<W, R> {
             match uci_io::read_uci_command(&mut self.reader) {
                 Ok(Some(cmd)) => {
                     if self.apply_command(cmd) == ControlFlow::Break(()) {
+                        let log_dir = option_env!("LOG_DIR");
+                        if let Some(stats) = engine::stats()
+                            && let Some(log_dir) = log_dir
+                        {
+                            let file = File::create(Path::new(log_dir).join("stats.txt"));
+                            file.iter().for_each(|mut f| {
+                                writeln!(f, "{stats}").unwrap();
+                            });
+                        }
                         break;
                     }
                 }
@@ -101,7 +114,7 @@ impl<W: Write + Send, R: BufRead> Uci<W, R> {
 
     fn handle_eval(&self) {
         let eval = self.engine.eval();
-        Self::send(eval, &mut &mut *self.acquire_writer_lock());
+        Self::send(eval, &mut *self.acquire_writer_lock());
     }
 
     fn handle_uci(&self) {
@@ -123,7 +136,7 @@ impl<W: Write + Send, R: BufRead> Uci<W, R> {
     }
 
     fn handle_ucinewgame(&mut self) {
-        self.engine.set_pos(Position::default());
+        self.engine.clear();
     }
 
     fn handle_go(&self, cmd: GoCmd) {
@@ -139,11 +152,6 @@ impl<W: Write + Send, R: BufRead> Uci<W, R> {
         let final_writer = Arc::clone(&self.writer);
         let time_control = TimeControl::new(time_control_kind.into(), self.engine.pos());
 
-        // Self::send(
-        //     format!("\n{time_control}"),
-        //     &mut *self.writer.lock().expect("FATAL"),
-        // );
-
         self.engine.search(
             depth,
             time_control,
@@ -152,7 +160,7 @@ impl<W: Write + Send, R: BufRead> Uci<W, R> {
 
                 Self::send(
                     format!(
-                        "info depth {} {} nodes {} nps {} time {}",
+                        "info depth {} score {} nodes {} nps {} time {}",
                         res.depth, res.score, res.nodes, res.nps, res.elapsed_millis
                     ),
                     &mut *writer,
@@ -181,8 +189,7 @@ impl<W: Write + Send, R: BufRead> Uci<W, R> {
                         pos.do_move_inner(*mv);
                     });
                 }
-
-                self.engine.set_pos(pos);
+                self.engine.new_position(pos);
             }
 
             PositionCmd::Fen(fen, items) => {
@@ -194,7 +201,7 @@ impl<W: Write + Send, R: BufRead> Uci<W, R> {
                     });
                 }
 
-                self.engine.set_pos(pos);
+                self.engine.new_position(pos);
             }
         }
     }

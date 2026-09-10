@@ -1,17 +1,19 @@
 use std::{
     sync::{
-        Arc,
+        Arc, LazyLock,
         atomic::{AtomicBool, Ordering},
     },
     thread,
 };
 
-use position::position::{InvalidMoveError, Position, Undo};
+use parking_lot::Mutex;
+use position::position::Position;
 use types::chess_move::Move;
 
 use crate::{
     eval::Score,
     search::{SearchOptions, SearchResult},
+    stats::EngineStats,
     time_control::TimeControl,
     tt::{TT, TTOptions},
 };
@@ -19,10 +21,17 @@ use crate::{
 mod eval;
 mod mvv_lva;
 mod search;
+mod stats;
 pub mod time_control;
 mod tt;
 
 const DEFAULT_SEARCH_DEPTH: u8 = search::MAX_DEPTH;
+
+static STATISTICS: LazyLock<Mutex<Option<EngineStats>>> = LazyLock::new(|| Mutex::new(None));
+
+pub fn stats() -> Option<EngineStats> {
+    STATISTICS.lock().clone()
+}
 
 #[derive(Default)]
 pub struct Engine {
@@ -48,11 +57,30 @@ impl Engine {
         }
     }
 
+    pub fn collect_stats(&mut self) {
+        let mut guard = STATISTICS.lock();
+        if guard.is_none() {
+            let mut stats = EngineStats::new();
+            stats.advance_new_game();
+            guard.replace(stats);
+        }
+    }
+
+    pub fn clear(&mut self) {
+        self.pos = Position::default();
+        self.stop_thinking.store(false, Ordering::Release);
+        self.tt.clear();
+
+        if let Some(ref mut stats) = *STATISTICS.lock() {
+            stats.advance_new_game();
+        }
+    }
+
     pub fn search<F, U>(
         &self,
         depth: Option<u8>,
         time_control: TimeControl,
-        intermediate_result_consumer: F,
+        mut intermediate_result_consumer: F,
         mut final_result_consumer: U,
     ) where
         F: FnMut(&SearchResult) + Send + 'static,
@@ -63,22 +91,30 @@ impl Engine {
             .compare_exchange(false, true, Ordering::AcqRel, Ordering::Relaxed)
             .is_ok()
         {
-            let mut pos = self.pos.clone();
+            let pos = self.pos.clone();
             let tt = self.tt.clone();
             let is_thinking = Arc::clone(&self.is_thinking);
             let stop_thinking = Arc::clone(&self.stop_thinking);
 
+            if let Some(ref mut stats) = *STATISTICS.lock() {
+                stats.push_time_control(time_control.clone());
+            }
+
             thread::spawn(move || {
                 let search_options = SearchOptions {
-                    pos: &mut pos,
+                    pos: &mut pos.clone(),
                     search_depth: depth.unwrap_or(DEFAULT_SEARCH_DEPTH),
                     tt_opts: tt,
                     stop_thinking: &stop_thinking,
-                    time_control: time_control,
+                    time_control: time_control.clone(),
                 };
 
-                let SearchResult { best_move, .. } =
-                    search::search(search_options, intermediate_result_consumer);
+                let SearchResult { best_move, .. } = search::search(search_options, |a| {
+                    if let Some(ref mut stats) = *STATISTICS.lock() {
+                        stats.push_search_res(a.clone());
+                    }
+                    intermediate_result_consumer(a)
+                });
 
                 is_thinking.store(false, Ordering::Release);
 
@@ -91,16 +127,16 @@ impl Engine {
         eval::static_eval(&self.pos)
     }
 
-    pub fn set_pos(&mut self, new_pos: Position) {
+    pub fn new_position(&mut self, new_pos: Position) {
         self.pos = new_pos;
+
+        if let Some(ref mut stats) = *STATISTICS.lock() {
+            stats.push_new_pos(self.pos.clone());
+        }
     }
 
     pub fn pos(&self) -> &Position {
         &self.pos
-    }
-
-    pub fn make_move(&mut self, mv: Move) -> Result<Undo, InvalidMoveError> {
-        self.pos.do_move(mv)
     }
 
     pub fn stop_search(&self) {

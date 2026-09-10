@@ -32,7 +32,7 @@ impl Default for Bound {
     }
 }
 
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Clone)]
 pub struct SearchResult {
     pub depth: u8,
     pub score: Score,

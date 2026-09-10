@@ -15,7 +15,7 @@ const LAG_BUFFER_MILLIS: u32 = 30;
 /// Min possible value for the remaining time
 const FLOOR_MS: u32 = 10;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct TimeControl {
     pub started: Instant,
     pub soft_limit: Duration,
