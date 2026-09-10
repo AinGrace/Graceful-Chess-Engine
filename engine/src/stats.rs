@@ -7,7 +7,7 @@ use crate::{search::SearchResult, time_control::TimeControl};
 
 #[derive(Clone)]
 pub struct EngineStats {
-    games: Vec<GameStats>,
+    game: Option<GameStats>,
 }
 
 #[derive(Clone)]
@@ -24,16 +24,15 @@ pub struct PositionStats {
 
 impl EngineStats {
     pub fn new() -> Self {
-        Self { games: vec![] }
+        Self { game: None }
     }
 
-    fn last_game_mut(&mut self) -> Option<&mut GameStats> {
-        self.games.last_mut()
+    fn game_mut(&mut self) -> Option<&mut GameStats> {
+        self.game.as_mut()
     }
 
     pub fn last_pos_mut(&mut self) -> Option<&mut PositionStats> {
-        self.last_game_mut()
-            .and_then(|game| game.positions.last_mut())
+        self.game_mut().and_then(|game| game.positions.last_mut())
     }
 
     pub fn push_time_control(&mut self, time_control: TimeControl) {
@@ -49,11 +48,11 @@ impl EngineStats {
     }
 
     pub fn advance_new_game(&mut self) {
-        self.games.push(GameStats { positions: vec![] });
+        self.game.replace(GameStats { positions: vec![] });
     }
 
     pub fn push_new_pos(&mut self, pos: Position) {
-        if let Some(game) = self.games.last_mut() {
+        if let Some(game) = self.game_mut() {
             game.positions.push(PositionStats {
                 pos,
                 time_control: None,
@@ -65,23 +64,8 @@ impl EngineStats {
 
 impl Display for EngineStats {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let total_positions: usize = self.games.iter().map(|g| g.positions.len()).sum();
-        let all_results = || {
-            self.games
-                .iter()
-                .flat_map(|g| g.positions.iter())
-                .flat_map(|p| p.search_results.iter())
-        };
-
         writeln!(f, "=== EngineStats ===")?;
-        writeln!(f, "games:     {}", self.games.len())?;
-        writeln!(f, "positions: {total_positions}")?;
-
-        if let Some(agg) = SearchAggregate::from_iter(all_results()) {
-            writeln!(f, "{agg}")?;
-        }
-
-        for (i, game) in self.games.iter().enumerate() {
+        for (i, game) in self.game.iter().enumerate() {
             writeln!(f)?;
             writeln!(f, "--- Game {} ---", i + 1)?;
             write!(f, "{}", indent(&game.to_string(), 1))?;
@@ -114,9 +98,6 @@ impl fmt::Display for PositionStats {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "fen:       {:<10}", self.pos.to_fen())?;
         writeln!(f, "turn:      {:<10?}", self.pos.turn())?;
-        writeln!(f, "halfmoves: {:<10}", self.pos.half_moves())?;
-        writeln!(f, "fullmoves: {:<10}", self.pos.full_moves())?;
-        writeln!(f, "hash:      {:<#10x}", self.pos.zobrist_hash())?;
 
         match &self.time_control {
             Some(tc) => writeln!(f, "--time control--\n{tc}")?,

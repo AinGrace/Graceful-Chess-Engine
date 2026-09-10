@@ -30,7 +30,7 @@ const DEFAULT_SEARCH_DEPTH: u8 = search::MAX_DEPTH;
 static STATISTICS: LazyLock<Mutex<Option<EngineStats>>> = LazyLock::new(|| Mutex::new(None));
 
 pub fn stats() -> Option<EngineStats> {
-    STATISTICS.lock().clone()
+    STATISTICS.lock().take()
 }
 
 #[derive(Default)]

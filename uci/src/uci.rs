@@ -53,15 +53,7 @@ impl<W: Write + Send, R: BufRead> Uci<W, R> {
             match uci_io::read_uci_command(&mut self.reader) {
                 Ok(Some(cmd)) => {
                     if self.apply_command(cmd) == ControlFlow::Break(()) {
-                        let log_dir = option_env!("LOG_DIR");
-                        if let Some(stats) = engine::stats()
-                            && let Some(log_dir) = log_dir
-                        {
-                            let file = File::create(Path::new(log_dir).join("stats.txt"));
-                            file.iter().for_each(|mut f| {
-                                writeln!(f, "{stats}").unwrap();
-                            });
-                        }
+                        write_stats_to_file();
                         break;
                     }
                 }
@@ -136,6 +128,7 @@ impl<W: Write + Send, R: BufRead> Uci<W, R> {
     }
 
     fn handle_ucinewgame(&mut self) {
+        write_stats_to_file();
         self.engine.clear();
     }
 
@@ -207,4 +200,16 @@ impl<W: Write + Send, R: BufRead> Uci<W, R> {
     }
 
     fn handle_setoption(&self, cmd: SetOptionCmd) {}
+}
+
+fn write_stats_to_file() {
+    let log_dir = option_env!("LOG_DIR");
+    if let Some(stats) = engine::stats()
+        && let Some(log_dir) = log_dir
+    {
+        let file = File::create(Path::new(log_dir).join("stats.txt"));
+        file.iter().for_each(|mut f| {
+            writeln!(f, "{stats}").unwrap();
+        });
+    }
 }

@@ -149,16 +149,6 @@ where
             next_depth_prediction = curr_depth_time.mul_f64(delta);
         }
 
-        // if time_control.soft_limit != Duration::MAX {
-        //     let factor = should_extend(
-        //         &result.score,
-        //         &current_result.score,
-        //         result.best_move != current_result.best_move,
-        //     );
-
-        //     time_control.increase_soft_by_factor(factor);
-        // }
-
         if current_result.is_aborted() {
             return result;
         }
