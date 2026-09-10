@@ -20,6 +20,7 @@ pub struct PositionStats {
     pos: Position,
     time_control: Option<TimeControl>,
     search_results: Vec<SearchResult>,
+    depth_predictions: Vec<u64>,
 }
 
 impl EngineStats {
@@ -43,6 +44,7 @@ impl EngineStats {
 
     pub fn push_search_res(&mut self, search_res: SearchResult) {
         if let Some(pos_stats) = self.last_pos_mut() {
+            pos_stats.depth_predictions.push(search_res.next_depth_prediction);
             pos_stats.search_results.push(search_res);
         }
     }
@@ -57,12 +59,15 @@ impl EngineStats {
                 pos,
                 time_control: None,
                 search_results: vec![],
+                depth_predictions: vec![],
             });
         }
     }
 
     pub fn is_empty(&self) -> bool {
-        if let Some(game) = &self.game && !game.positions.is_empty() {
+        if let Some(game) = &self.game
+            && !game.positions.is_empty()
+        {
             false
         } else {
             true
@@ -112,8 +117,8 @@ impl fmt::Display for PositionStats {
         }
 
         writeln!(f, "search results: {}", self.search_results.len())?;
-        for sr in &self.search_results {
-            writeln!(f, "  {sr}")?;
+        for i in 0..self.search_results.len() {
+            writeln!(f, "  {}", self.search_results[i])?;
         }
 
         if let Some(agg) = SearchAggregate::from_iter(self.search_results.iter()) {
@@ -138,8 +143,8 @@ impl fmt::Display for SearchResult {
 
         write!(
             f,
-            "depth {:>2} | score {} {:>5} | best {:>6} | nodes {:>10} | {:>12} nps | {:>6} ms",
-            self.depth, prefix, value, best, self.nodes, self.nps, self.elapsed_millis,
+            "depth {:>2} | score {} {:>5} | best {:>6} | nodes {:>10} | {:>12} nps | {:>6} ms | prediction {:>6}",
+            self.depth, prefix, value, best, self.nodes, self.nps, self.elapsed_millis, self.next_depth_prediction
         )
     }
 }

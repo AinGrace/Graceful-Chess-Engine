@@ -1,5 +1,6 @@
 use std::{
     cmp::{max, min},
+    ops::Div,
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
@@ -11,7 +12,7 @@ use position::position::Position;
 use types::chess_move::Move;
 
 use crate::{
-    eval::{self, Score, static_eval_debug},
+    eval::{self, Score},
     mvv_lva,
     time_control::TimeControl,
     tt::TTOptions,
@@ -40,6 +41,7 @@ pub struct SearchResult {
     pub nodes: u64,
     pub nps: u64,
     pub elapsed_millis: u128,
+    pub next_depth_prediction: u64,
 }
 
 impl SearchResult {
@@ -52,6 +54,7 @@ impl SearchResult {
         }: NegamaxResult,
         depth: u8,
         elapsed: Duration,
+        next_depth_prediction: u64,
     ) -> Self {
         let elapsed_millis = elapsed.as_millis();
         let elapsed_secs = elapsed.as_secs_f64();
@@ -64,6 +67,7 @@ impl SearchResult {
             nodes,
             nps,
             elapsed_millis,
+            next_depth_prediction,
         }
     }
 
@@ -118,20 +122,26 @@ pub fn search<F>(
 where
     F: FnMut(&SearchResult),
 {
+    struct DepthInfo {
+        nodes: u64,
+    }
+
+    let mut depths: Vec<DepthInfo> = vec![];
+
+    let mut next_predicted_time = 0;
+
     let mut result = SearchResult::default();
 
     let alpha = Score::Mate(-1);
     let beta = Score::Mate(1);
 
-    let mut previous_depth_time = Duration::ZERO;
-    let mut next_depth_prediction = Duration::ZERO;
-
     for curr_depth in 1..=search_depth {
-        if time_control.soft_expired() || next_depth_prediction > time_control.soft_limit {
+        if time_control.soft_expired()
+            || (next_predicted_time > time_control.soft_limit.as_millis() as u64 && curr_depth >= 6)
+        {
             return result;
         }
 
-        // TODO: early return on MATE scores
         let current_result = negamax(
             pos,
             curr_depth,
@@ -143,13 +153,6 @@ where
             &mut 0,
         );
 
-        if time_control.elapsed_from_start() >= time_control.soft_limit.div_f64(2.0) {
-            let curr_cumulative = time_control.elapsed_from_start();
-            let curr_depth_time = curr_cumulative - previous_depth_time;
-            let delta = curr_depth_time.div_duration_f64(previous_depth_time);
-            next_depth_prediction = curr_depth_time.mul_f64(delta);
-        }
-
         if current_result.is_aborted() {
             return result;
         }
@@ -158,19 +161,51 @@ where
             current_result,
             curr_depth,
             time_control.elapsed_from_start(),
+            next_predicted_time,
         );
 
+        depths.push(DepthInfo {
+            nodes: result.nodes,
+        });
+
         f(&result);
+
+        if curr_depth >= 6 && time_control.soft_limit != Duration::MAX {
+            let mut total_time = time_control.elapsed_from_start().as_millis() as u64;
+            if total_time == 0 {
+                total_time = 1;
+            }
+
+            let mut branching_factor = 0.0;
+
+            let total_nodes: u64 = depths.iter().map(|d| d.nodes).sum();
+
+            const DEPTH_PREDICTION_WINDOW: usize = 3;
+            let depth_len = depths.len();
+
+            for i in depth_len - DEPTH_PREDICTION_WINDOW..depth_len - 1 {
+                let d_nodes = depths[i + 1].nodes;
+                let prev_d_nodes = depths[i].nodes;
+
+                branching_factor += d_nodes.div(prev_d_nodes) as f64;
+            }
+
+            branching_factor = branching_factor / depths.len() as f64;
+
+            let next_predicted_nodes = (result.nodes as f64 * branching_factor) as u64;
+            next_predicted_time = (next_predicted_nodes * total_time) / total_nodes;
+        }
 
         if matches!(result.score, Score::Mate(_)) {
             return result;
         }
 
         if time_control.soft_expired() {
+            depths.push(DepthInfo {
+                nodes: result.nodes,
+            });
             return result;
         }
-
-        previous_depth_time = time_control.elapsed_from_start();
     }
 
     result

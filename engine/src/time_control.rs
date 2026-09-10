@@ -50,7 +50,7 @@ impl TimeControl {
             Duration::from_millis((base + increment as u64) * 3 / 4)
         };
 
-        let hard_limit = soft_limit.mul_f64(1.3);
+        let hard_limit = soft_limit.mul_f64(1.5);
 
         let res = Self {
             started: Instant::now(),
