@@ -1,4 +1,5 @@
 use std::fs::File;
+use std::fs::OpenOptions;
 use std::io::BufRead;
 use std::io::StdinLock;
 use std::io::Write;
@@ -203,13 +204,14 @@ impl<W: Write + Send, R: BufRead> Uci<W, R> {
 }
 
 fn write_stats_to_file() {
-    let log_dir = option_env!("LOG_DIR");
-    if let Some(stats) = engine::stats()
-        && let Some(log_dir) = log_dir
-    {
-        let file = File::create(Path::new(log_dir).join("stats.txt"));
-        file.iter().for_each(|mut f| {
-            writeln!(f, "{stats}").unwrap();
-        });
+    let log_dir = option_env!("LOG_DIR").unwrap_or("./");
+    if let Some(stats) = engine::stats() {
+        let mut file = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(Path::new(log_dir).join("stats.txt"))
+            .unwrap_or_else(|_| panic!("unable to open log file at {}", log_dir));
+
+        writeln!(file, "{stats}").unwrap();
     }
 }
