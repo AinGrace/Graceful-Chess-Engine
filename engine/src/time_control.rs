@@ -16,6 +16,7 @@ const LAG_BUFFER_MILLIS: u32 = 30;
 const FLOOR_MS: u32 = 10;
 
 #[derive(Debug, Clone)]
+/// FIXME: check if soft gets invoked, check the distance between soft and hard limits, reevaluate the time calculation
 pub struct TimeControl {
     pub started: Instant,
     pub soft_limit: Duration,
@@ -25,9 +26,9 @@ pub struct TimeControl {
     pub increment: u32,
 }
 
-// FIXME: check if soft gets invoked, check the distance between soft and hard limits, reevaluate the time calculation
 impl TimeControl {
     pub fn new(kind: TimeControlKind, pos: &Position) -> Self {
+        // specify what the increment is
         let (total_allocation, increment) = match (&kind, pos.turn()) {
             (TimeControlKind::Infinite, _) => return Self::new_infinite(),
 
@@ -41,12 +42,12 @@ impl TimeControl {
         let remaining_millis = total_allocation.saturating_sub(LAG_BUFFER_MILLIS);
 
         let soft_limit = if remaining_millis < 1000 {
-            let base = cmp::max(remaining_millis / 20, FLOOR_MS);
-            Duration::from_millis((base + increment * 3 / 4) as u64)
+            let base = cmp::max(remaining_millis / 20, FLOOR_MS) as u64;
+            Duration::from_millis((base + increment as u64) * 3 / 4)
         } else {
             let move_count = AVG_MOVES_PER_GAME.saturating_sub(pos.full_moves()).max(5);
             let base = (remaining_millis / move_count) as u64;
-            Duration::from_millis(base + increment as u64 * 3 / 4)
+            Duration::from_millis((base + increment as u64) * 3 / 4)
         };
 
         let hard_limit = Duration::from_millis(
