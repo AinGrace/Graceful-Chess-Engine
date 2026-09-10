@@ -62,7 +62,11 @@ impl EngineStats {
     }
 
     pub fn is_empty(&self) -> bool {
-        self.game.is_none()
+        if let Some(game) = &self.game && !game.positions.is_empty() {
+            false
+        } else {
+            true
+        }
     }
 }
 
