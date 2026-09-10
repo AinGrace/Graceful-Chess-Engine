@@ -131,6 +131,7 @@ where
             return result;
         }
 
+        // TODO: early return on MATE scores
         let current_result = negamax(
             pos,
             curr_depth,
@@ -142,7 +143,7 @@ where
             &mut 0,
         );
 
-        if curr_depth >= 5 {
+        if time_control.elapsed_from_start() >= time_control.soft_limit.div_f64(2.0) {
             let curr_cumulative = time_control.elapsed_from_start();
             let curr_depth_time = curr_cumulative - previous_depth_time;
             let delta = curr_depth_time.div_duration_f64(previous_depth_time);
@@ -160,6 +161,10 @@ where
         );
 
         f(&result);
+
+        if matches!(result.score, Score::Mate(_)) {
+            return result;
+        }
 
         if time_control.soft_expired() {
             return result;

@@ -45,15 +45,12 @@ impl TimeControl {
             let base = cmp::max(remaining_millis / 20, FLOOR_MS) as u64;
             Duration::from_millis((base + increment as u64) * 3 / 4)
         } else {
-            let move_count = AVG_MOVES_PER_GAME.saturating_sub(pos.full_moves()).max(5);
-            let base = (remaining_millis / move_count) as u64;
+            let moves_until_the_end = AVG_MOVES_PER_GAME.saturating_sub(pos.full_moves()).max(5);
+            let base = (remaining_millis / moves_until_the_end) as u64;
             Duration::from_millis((base + increment as u64) * 3 / 4)
         };
 
-        let hard_limit = Duration::from_millis(
-            (remaining_millis as u64 / 20).min(soft_limit.as_millis() as u64 * 4),
-        )
-        .max(soft_limit);
+        let hard_limit = soft_limit.mul_f64(1.3);
 
         let res = Self {
             started: Instant::now(),
