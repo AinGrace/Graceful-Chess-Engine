@@ -60,14 +60,17 @@ impl EngineStats {
             });
         }
     }
+
+    pub fn is_empty(&self) -> bool {
+        self.game.is_none()
+    }
 }
 
 impl Display for EngineStats {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, "=== EngineStats ===")?;
-        for (i, game) in self.game.iter().enumerate() {
+        for game in self.game.iter() {
             writeln!(f)?;
-            writeln!(f, "--- Game {} ---", i + 1)?;
+            writeln!(f, "--- Game ---")?;
             write!(f, "{}", indent(&game.to_string(), 1))?;
         }
 

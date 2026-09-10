@@ -205,7 +205,7 @@ impl<W: Write + Send, R: BufRead> Uci<W, R> {
 
 fn write_stats_to_file() {
     let log_dir = option_env!("LOG_DIR").unwrap_or("./");
-    if let Some(stats) = engine::stats() {
+    if let Some(stats) = engine::stats() && !stats.is_empty() {
         let mut file = OpenOptions::new()
             .create(true)
             .append(true)
