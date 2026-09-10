@@ -168,7 +168,7 @@ impl SearchAggregate {
         let count = results.len();
         let max_depth = results.iter().map(|r| r.depth).max().unwrap_or(0);
         let total_nodes = results.iter().map(|r| r.nodes).sum();
-        let total_elapsed_ms = results.iter().map(|r| r.elapsed_millis).sum();
+        let total_elapsed_ms = results.last().map(|r| r.elapsed_millis).unwrap_or_default();
         let avg_nps = results.iter().map(|r| r.nps as u128).sum::<u128>() / count as u128;
 
         Some(Self {

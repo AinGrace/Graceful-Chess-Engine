@@ -170,7 +170,7 @@ where
 
         f(&result);
 
-        if curr_depth >= 6 && time_control.soft_limit != Duration::MAX {
+        if curr_depth >= 3 && time_control.soft_limit != Duration::MAX {
             let mut total_time = time_control.elapsed_from_start().as_millis() as u64;
             if total_time == 0 {
                 total_time = 1;
@@ -180,7 +180,7 @@ where
 
             let total_nodes: u64 = depths.iter().map(|d| d.nodes).sum();
 
-            const DEPTH_PREDICTION_WINDOW: usize = 3;
+            const DEPTH_PREDICTION_WINDOW: usize = 4;
             let depth_len = depths.len();
 
             for i in depth_len - DEPTH_PREDICTION_WINDOW..depth_len - 1 {
@@ -190,6 +190,7 @@ where
                 branching_factor += d_nodes.div(prev_d_nodes) as f64;
             }
 
+            // Exclude zero nodes/time depth from calculations
             branching_factor = branching_factor / depths.len() as f64;
 
             let next_predicted_nodes = (result.nodes as f64 * branching_factor) as u64;
