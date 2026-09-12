@@ -247,51 +247,17 @@ impl Not for Bitboard {
     }
 }
 
-impl IntoIterator for Bitboard {
-    type Item = Square;
-
-    type IntoIter = BitboardIter;
-
-    fn into_iter(self) -> Self::IntoIter {
-        Self::IntoIter { inner: self }
-    }
-}
-
-impl IntoIterator for &Bitboard {
-    type Item = Square;
-
-    type IntoIter = BitboardIter;
-
-    fn into_iter(self) -> Self::IntoIter {
-        Self::IntoIter { inner: *self }
-    }
-}
-
-pub struct BitboardIter {
-    inner: Bitboard,
-}
-
-impl Iterator for BitboardIter {
+impl Iterator for Bitboard {
     type Item = Square;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let bb = self.inner.0;
-
-        if bb == 0 {
+        let bb = &mut self.0;
+        if *bb == 0 {
             return None;
         }
-
-        let sq = bb.trailing_zeros();
-        self.inner.0 &= bb - 1;
-
-        Some(Square::from_u32_checked(sq))
-    }
-
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        (
-            self.inner.popcnt() as usize,
-            Some(self.inner.popcnt() as usize),
-        )
+        let index = bb.trailing_zeros();
+        *bb &= *bb - 1;
+        Some(Square::from_u32_checked(index))
     }
 }
 

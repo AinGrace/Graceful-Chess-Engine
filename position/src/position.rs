@@ -194,8 +194,8 @@ impl Position {
     }
 
     #[inline(always)]
-    pub fn board_mut(&mut self) -> &mut Board {
-        &mut self.board
+    pub fn board_owned(&self) -> Board {
+        self.board.clone()
     }
 
     pub fn ep_square(&self) -> Option<Square> {
@@ -239,7 +239,7 @@ impl Position {
     pub fn uci_move_checked(&mut self, raw_uci: &str) -> Undo {
         let uci_move = self
             .parse_uci(raw_uci)
-            .unwrap_or_else(|| panic!("caller quarantees the validity of raw_uci {raw_uci}"));
+            .unwrap_or_else(|| panic!("invalid uci {raw_uci}"));
 
         self.do_move_inner(uci_move)
     }
@@ -326,31 +326,6 @@ impl Position {
         let legal_moves = self.legal_moves();
         legal_moves.contains(&mv)
     }
-
-    // TODO: move to ChessBoard
-    // pub fn game_result(&self) -> GameResult {
-    //     if self.board().is_insufficient_material() {
-    //         return GameResult::Draw;
-    //     }
-
-    //     if self.half_moves >= 100 {
-    //         return GameResult::Draw;
-    //     }
-
-    //     if self.zobrist_hashes.values().any(|val| *val >= 3) {
-    //         return GameResult::Draw;
-    //     }
-
-    //     if self.is_checkmate() {
-    //         return GameResult::new_winner(!self.turn);
-    //     }
-
-    //     if self.is_stalemate() {
-    //         return GameResult::Draw;
-    //     }
-
-    //     GameResult::Unknown
-    // }
 
     /// # PANICS
     /// Calling this method without validity quarantees by the caller may corrupt the state of ChessBoard

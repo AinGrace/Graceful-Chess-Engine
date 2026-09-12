@@ -16,6 +16,11 @@ use types::{
 
 use crate::{board::Board, move_gen::pin_info::PinInfo, position::Position};
 
+fn gen_legal_moves_for_v2(pos: &Position, color: Color) -> MoveList {
+    
+    todo!()
+}
+
 pub fn gen_legal_moves_for(pos: &Position, us: Color) -> MoveList {
     let mut moves = MoveList::new();
     let board = pos.board();

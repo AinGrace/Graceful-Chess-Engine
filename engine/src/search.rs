@@ -115,7 +115,7 @@ pub fn search<F>(
         search_depth,
         tt_opts,
         stop_thinking: stop_flag,
-        mut time_control,
+        time_control,
     }: SearchOptions,
     mut f: F,
 ) -> SearchResult
@@ -431,9 +431,9 @@ fn quiesce(
         if !in_check {
             let see_score = {
                 let turn = pos.turn();
-                let board = pos.board_mut();
+                let mut board = pos.board_owned();
 
-                eval::eval_see(board, current_move.to(), turn)
+                eval::eval_see(&mut board, current_move.to(), turn)
             };
 
             if see_score == 0 {
