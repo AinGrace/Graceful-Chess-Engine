@@ -4,127 +4,123 @@ use crate::{bitboard::Bitboard, role::Role, square::Square};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub struct ByRole<T> {
-    pawn: T,
-    knight: T,
-    bishop: T,
-    rook: T,
-    queen: T,
-    king: T,
+    inner: [T; 6],
 }
 
 impl<T> ByRole<T> {
     pub fn new(pawn: T, knight: T, bishop: T, rook: T, queen: T, king: T) -> Self {
         Self {
-            pawn,
-            knight,
-            bishop,
-            rook,
-            queen,
-            king,
+            inner: [pawn, knight, bishop, rook, queen, king],
         }
     }
 
     pub fn get(&self, role: Role) -> &T {
-        match role {
-            Role::Pawn => &self.pawn,
-            Role::Knight => &self.knight,
-            Role::Bishop => &self.bishop,
-            Role::Rook => &self.rook,
-            Role::Queen => &self.queen,
-            Role::King => &self.king,
-        }
+        unsafe { self.inner.get_unchecked(role as usize) }
     }
 
     pub fn get_mut(&mut self, role: Role) -> &mut T {
-        match role {
-            Role::Pawn => &mut self.pawn,
-            Role::Knight => &mut self.knight,
-            Role::Bishop => &mut self.bishop,
-            Role::Rook => &mut self.rook,
-            Role::Queen => &mut self.queen,
-            Role::King => &mut self.king,
-        }
+        unsafe { self.inner.get_unchecked_mut(role as usize) }
     }
 
     pub fn pawns(&self) -> &T {
-        &self.pawn
+        self.get(Role::Pawn)
     }
 
     pub fn pawns_mut(&mut self) -> &mut T {
-        &mut self.pawn
+        self.get_mut(Role::Pawn)
     }
 
     pub fn knights(&self) -> &T {
-        &self.knight
+        self.get(Role::Knight)
     }
 
     pub fn knights_mut(&mut self) -> &mut T {
-        &mut self.knight
+        self.get_mut(Role::Knight)
     }
 
     pub fn bishops(&self) -> &T {
-        &self.bishop
+        self.get(Role::Bishop)
     }
 
     pub fn bishops_mut(&mut self) -> &mut T {
-        &mut self.bishop
+        self.get_mut(Role::Bishop)
     }
 
     pub fn rooks(&self) -> &T {
-        &self.rook
+        self.get(Role::Rook)
     }
 
     pub fn rooks_mut(&mut self) -> &mut T {
-        &mut self.rook
+        self.get_mut(Role::Rook)
     }
 
     pub fn queens(&self) -> &T {
-        &self.queen
+        self.get(Role::Queen)
     }
-
     pub fn queens_mut(&mut self) -> &mut T {
-        &mut self.queen
+        self.get_mut(Role::Queen)
     }
 
-    pub const fn kings(&self) -> &T {
-        &self.king
+    pub fn kings(&self) -> &T {
+        self.get(Role::King)
     }
 
     pub fn kings_mut(&mut self) -> &mut T {
-        &mut self.king
+        self.get_mut(Role::King)
     }
 }
 
 impl ByRole<Bitboard> {
     pub fn peek_role(&self, square: Square) -> Option<Role> {
-        match self {
-            Self { pawn, .. } if pawn.is_square_set(square) => Some(Role::Pawn),
-            Self { knight, .. } if knight.is_square_set(square) => Some(Role::Knight),
-            Self { bishop, .. } if bishop.is_square_set(square) => Some(Role::Bishop),
-            Self { rook, .. } if rook.is_square_set(square) => Some(Role::Rook),
-            Self { queen, .. } if queen.is_square_set(square) => Some(Role::Queen),
-            Self { king, .. } if king.is_square_set(square) => Some(Role::King),
-            _ => None,
+        if self.pawns().is_square_set(square) {
+            return Some(Role::Pawn);
         }
+
+        if self.knights().is_square_set(square) {
+            return Some(Role::Knight);
+        }
+
+        if self.bishops().is_square_set(square) {
+            return Some(Role::Bishop);
+        }
+
+        if self.rooks().is_square_set(square) {
+            return Some(Role::Rook);
+        }
+
+        if self.queens().is_square_set(square) {
+            return Some(Role::Queen);
+        }
+
+        if self.kings().is_square_set(square) {
+            return Some(Role::King);
+        }
+
+        None
     }
 
     pub fn peek_role_checked(&self, square: Square) -> Role {
-        if self.pawn.is_square_set(square) {
+        if self.pawns().is_square_set(square) {
             return Role::Pawn;
         }
-        if self.knight.is_square_set(square) {
+
+        if self.knights().is_square_set(square) {
             return Role::Knight;
         }
-        if self.bishop.is_square_set(square) {
+
+        if self.bishops().is_square_set(square) {
             return Role::Bishop;
         }
-        if self.rook.is_square_set(square) {
+
+        if self.rooks().is_square_set(square) {
             return Role::Rook;
         }
-        if self.queen.is_square_set(square) {
+
+        if self.queens().is_square_set(square) {
             return Role::Queen;
         }
-        if self.king.is_square_set(square) {
+
+        if self.kings().is_square_set(square) {
             return Role::King;
         }
 
@@ -133,22 +129,27 @@ impl ByRole<Bitboard> {
 
     /// caller should guarantee that Square does correspont to existing piece on bitboard
     pub unsafe fn peek_role_unchecked(&self, square: Square) -> Role {
-        if self.pawn.is_square_set(square) {
+        if self.pawns().is_square_set(square) {
             return Role::Pawn;
         }
-        if self.knight.is_square_set(square) {
+
+        if self.knights().is_square_set(square) {
             return Role::Knight;
         }
-        if self.bishop.is_square_set(square) {
+
+        if self.bishops().is_square_set(square) {
             return Role::Bishop;
         }
-        if self.rook.is_square_set(square) {
+
+        if self.rooks().is_square_set(square) {
             return Role::Rook;
         }
-        if self.queen.is_square_set(square) {
+
+        if self.queens().is_square_set(square) {
             return Role::Queen;
         }
-        if self.king.is_square_set(square) {
+
+        if self.kings().is_square_set(square) {
             return Role::King;
         }
 

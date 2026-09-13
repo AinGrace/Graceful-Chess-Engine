@@ -16,6 +16,7 @@ use types::{
 pub struct Board {
     by_role: ByRole<Bitboard>,
     by_color: ByColor<Bitboard>,
+    mailbox: [Option<Piece>; 64],
 }
 
 impl Board {
@@ -32,7 +33,26 @@ impl Board {
 
         let by_color = ByColor::new(0x0000_0000_0000_ffff.to_bb(), 0xffff_0000_0000_0000.to_bb());
 
-        Self { by_role, by_color }
+        let mut mailbox = [None; 64];
+
+        (0..64).for_each(|idx| {
+            let role = by_role.peek_role(unsafe { Square::from_u32_unchecked(idx as u32) });
+            let color = by_color.peek_color(unsafe { Square::from_u32_unchecked(idx as u32) });
+
+            if let Some(role) = role
+                && let Some(color) = color
+            {
+                mailbox[idx] = Some(Piece::of(role, color));
+            } else {
+                mailbox[idx] = None;
+            }
+        });
+
+        Self {
+            by_role,
+            by_color,
+            mailbox,
+        }
     }
 
     pub fn new_empty() -> Self {
@@ -47,7 +67,13 @@ impl Board {
 
         let by_color = ByColor::new(Bitboard::new_empty(), Bitboard::new_empty());
 
-        Self { by_role, by_color }
+        let mailbox = [None; 64];
+
+        Self {
+            by_role,
+            by_color,
+            mailbox,
+        }
     }
 
     #[inline(always)]
@@ -193,9 +219,7 @@ impl Board {
     /// returns the UNIQUE king of specified side, panics otherwise
     #[inline(always)]
     pub fn the_king(&self, color: Color) -> Square {
-        self.king(color)
-            .first_square()
-            .expect("The king always exists and is always unique")
+        self.king(color).first_square_checked()
     }
 
     #[inline(always)]
@@ -228,53 +252,75 @@ impl Board {
 
     #[inline(always)]
     pub fn peek(&self, square: Square) -> Option<Piece> {
-        let role = self.by_role.peek_role(square)?;
-        let color = self.by_color.peek_color(square)?;
-
-        Some(Piece::of(role, color))
+        unsafe { *self.mailbox.get_unchecked(square.as_usize()) }
     }
 
     #[inline(always)]
     pub fn peek_checked(&self, square: Square) -> Piece {
-        let role = self.by_role.peek_role_checked(square);
-        let color = self.by_color.peek_color_checked(square);
-
-        Piece::of(role, color)
+        unsafe {
+            self.mailbox
+                .get_unchecked(square.as_usize())
+                .expect("piece should exist")
+        }
     }
 
     /// safety preconditions are same as those on ByColor::peek_role_unchecked
     #[inline(always)]
     pub unsafe fn peek_unchecked(&self, square: Square) -> Piece {
-        let role = unsafe { self.by_role.peek_role_unchecked(square) };
-        let color = unsafe { self.by_color.peek_color_unchecked(square) };
-
-        Piece::of(role, color)
+        unsafe {
+            self.mailbox
+                .get_unchecked(square.as_usize())
+                .unwrap_unchecked()
+        }
     }
 
     #[inline(always)]
     pub fn peek_role(&self, square: Square) -> Option<Role> {
-        self.by_role.peek_role(square)
+        unsafe {
+            self.mailbox
+                .get_unchecked(square.as_usize())
+                .map(|p| p.role())
+        }
     }
 
     #[inline(always)]
     pub fn peek_role_checked(&self, square: Square) -> Role {
-        self.by_role.peek_role_checked(square)
+        unsafe {
+            self.mailbox
+                .get_unchecked(square.as_usize())
+                .expect("piece should exist")
+                .role()
+        }
     }
 
     /// SAFETY: safety requirements are the same as of the underlying ByRole::peek_role_unchecked
     #[inline(always)]
     pub unsafe fn peek_role_unchecked(&self, square: Square) -> Role {
-        unsafe { self.by_role.peek_role_unchecked(square) }
+        unsafe {
+            self.mailbox
+                .get_unchecked(square.as_usize())
+                .unwrap_unchecked()
+                .role()
+        }
     }
 
     #[inline(always)]
     pub fn peek_color(&self, square: Square) -> Option<Color> {
-        self.by_color.peek_color(square)
+        unsafe {
+            self.mailbox
+                .get_unchecked(square.as_usize())
+                .map(|p| p.color())
+        }
     }
 
     #[inline(always)]
     pub fn peek_color_checked(&self, square: Square) -> Color {
-        self.by_color.peek_color_checked(square)
+        unsafe {
+            self.mailbox
+                .get_unchecked(square.as_usize())
+                .expect("piece should exists")
+                .color()
+        }
     }
 
     #[inline(always)]
@@ -387,6 +433,8 @@ impl Board {
 
         *role_bb = role_bb.set_square(square);
         *color_bb = color_bb.set_square(square);
+
+        self.mailbox[square.as_usize()] = Some(piece);
     }
 
     #[inline(always)]
@@ -397,6 +445,8 @@ impl Board {
 
             *role_bb = role_bb.clear_square(square);
             *color_bb = color_bb.clear_square(square);
+
+            self.mailbox[square.as_usize()] = None;
         }
     }
 
@@ -409,6 +459,8 @@ impl Board {
 
         *role_bb = role_bb.clear_square(square);
         *color_bb = color_bb.clear_square(square);
+
+        self.mailbox[square.as_usize()] = None;
     }
 
     #[must_use]
@@ -421,6 +473,8 @@ impl Board {
 
         *role_bb = role_bb.clear_square(square);
         *color_bb = color_bb.clear_square(square);
+
+        self.mailbox[square.as_usize()] = None;
 
         Some(piece)
     }
@@ -436,6 +490,8 @@ impl Board {
         *role_bb = role_bb.clear_square(square);
         *color_bb = color_bb.clear_square(square);
 
+        self.mailbox[square.as_usize()] = None;
+
         piece
     }
 
@@ -450,6 +506,8 @@ impl Board {
 
         *role_bb = role_bb.clear_square(square);
         *color_bb = color_bb.clear_square(square);
+
+        self.mailbox[square.as_usize()] = None;
 
         piece
     }

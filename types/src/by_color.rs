@@ -2,57 +2,51 @@ use std::hint::unreachable_unchecked;
 
 use crate::{bitboard::Bitboard, color::Color, square::Square};
 
-// TODO: consider converthing this into array
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ByColor<T> {
-    white: T,
-    black: T,
+    inner: [T; 2],
 }
 
 impl<T> ByColor<T> {
     pub fn new(white: T, black: T) -> Self {
-        Self { white, black }
+        Self {
+            inner: [white, black],
+        }
     }
 
-    pub const fn get(&self, color: Color) -> &T {
-        match color {
-            Color::White => &self.white,
-            Color::Black => &self.black,
-        }
+    pub fn get(&self, color: Color) -> &T {
+        unsafe { self.inner.get_unchecked(color as usize) }
     }
 
     pub fn get_mut(&mut self, color: Color) -> &mut T {
-        match color {
-            Color::White => &mut self.white,
-            Color::Black => &mut self.black,
-        }
+         unsafe { self.inner.get_unchecked_mut(color as usize) }
     }
 
     pub fn whites(&self) -> &T {
-        &self.white
+        unsafe { self.inner.get_unchecked(0) }
     }
 
     pub fn whites_mut(&mut self) -> &mut T {
-        &mut self.white
+        unsafe { self.inner.get_unchecked_mut(0) }
     }
 
     pub fn blacks(&self) -> &T {
-        &self.black
+        unsafe { self.inner.get_unchecked(1) }
     }
 
     pub fn blacks_mut(&mut self) -> &mut T {
-        &mut self.black
+        unsafe { self.inner.get_unchecked_mut(1) }
     }
 }
 
 /// Specialization methods if ByColor contains Bitboard
 impl ByColor<Bitboard> {
     pub fn peek_color(&self, square: Square) -> Option<Color> {
-        if self.white.is_square_set(square) {
+        if self.whites().is_square_set(square) {
             return Some(Color::White);
         }
 
-        if self.black.is_square_set(square) {
+        if self.blacks().is_square_set(square) {
             return Some(Color::Black);
         }
 

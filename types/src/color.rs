@@ -1,9 +1,10 @@
 use std::ops::Not;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
 pub enum Color {
-    White,
-    Black,
+    White = 0,
+    Black = 1, 
 }
 
 impl Color {
