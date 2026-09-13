@@ -1,5 +1,8 @@
+use std::hint::unreachable_unchecked;
+
 use crate::{bitboard::Bitboard, color::Color, square::Square};
 
+// TODO: consider converthing this into array
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ByColor<T> {
     white: T,
@@ -63,6 +66,17 @@ impl ByColor<Bitboard> {
             Color::Black
         } else {
             panic!("peek_color_checked on unset square")
+        }
+    }
+
+    /// caller should guarantee that square corresponds to a bitboard with existing piece
+    pub unsafe fn peek_color_unchecked(&self, square: Square) -> Color {
+        if self.whites().is_square_set(square) {
+            Color::White
+        } else if self.blacks().is_square_set(square) {
+            Color::Black
+        } else {
+            unsafe { unreachable_unchecked() }
         }
     }
 }

@@ -1,173 +1,162 @@
-use crate::{
-    role::Role::{self, Pawn},
-    square::Square,
-};
+use std::fmt::Debug;
 
-pub enum CastlingSide {
-    WShort,
-    WLong,
-    BShort,
-    BLong,
+use crate::{role::Role, square::Square};
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+pub struct Move(u16);
+
+const FROM_SHIFT: u16 = 0;
+const TO_SHIFT: u16 = 6;
+const FLAG_SHIFT: u16 = 12;
+
+const SQ_MASK: u16 = 0b0011_1111;
+const FLAG_MASK: u16 = 0b1111;
+
+#[repr(u16)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum MoveFlag {
+    Quiet = 0,
+    DoublePush = 1,
+    KingCastle = 2,
+    QueenCastle = 3,
+    Capture = 4,
+    EnPassant = 5,
+    // 6, 7 unused
+    PromoN = 8,
+    PromoB = 9,
+    PromoR = 10,
+    PromoQ = 11,
+    PromoCapN = 12,
+    PromoCapB = 13,
+    PromoCapR = 14,
+    PromoCapQ = 15,
 }
 
-/// TODO: use bits to reduce the memory usage, as in the Castlings struct
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Move {
-    Standard {
-        role: Role,
-        from: Square,
-        to: Square,
-        capture: Option<Role>,
-        promotion: Option<Role>,
-    },
+impl MoveFlag {
+    fn from_bits(bits: u16) -> Self {
+        // Safety: only 0..=5 and 8..=15 are ever written; 6/7 never occur
+        unsafe { std::mem::transmute(bits) }
+    }
 
-    EnPassant {
-        from: Square,
-        to: Square,
-    },
+    pub fn is_promotion(self) -> bool {
+        (self as u16) >= 8
+    }
 
-    Castling {
-        king: Square,
-        rook: Square,
-    },
+    pub fn is_capture(self) -> bool {
+        matches!(
+            self,
+            MoveFlag::Capture
+                | MoveFlag::EnPassant
+                | MoveFlag::PromoCapN
+                | MoveFlag::PromoCapB
+                | MoveFlag::PromoCapR
+                | MoveFlag::PromoCapQ
+        )
+    }
+
+    /// Role::Knight/Bishop/Rook/Queen for promotions, panics otherwise
+    pub fn promo_role(self) -> Role {
+        use crate::role::Role;
+        match self {
+            MoveFlag::PromoN | MoveFlag::PromoCapN => Role::Knight,
+            MoveFlag::PromoB | MoveFlag::PromoCapB => Role::Bishop,
+            MoveFlag::PromoR | MoveFlag::PromoCapR => Role::Rook,
+            MoveFlag::PromoQ | MoveFlag::PromoCapQ => Role::Queen,
+            _ => unreachable!("promo_role called on non-promotion move"),
+        }
+    }
 }
 
 impl Move {
-    pub fn standart(
-        role: Role,
-        from: Square,
-        to: Square,
-        capture: Option<Role>,
-        promotion: Option<Role>,
-    ) -> Self {
-        Self::Standard {
-            role,
-            from,
-            to,
-            capture,
-            promotion,
-        }
+    fn pack(from: Square, to: Square, flag: MoveFlag) -> Self {
+        Move(
+            (from as u16 & SQ_MASK) << FROM_SHIFT
+                | (to as u16 & SQ_MASK) << TO_SHIFT
+                | (flag as u16) << FLAG_SHIFT,
+        )
     }
 
-    pub fn castling(castling: CastlingSide) -> Self {
-        match castling {
-            CastlingSide::WShort => Self::Castling {
-                king: Square::E1,
-                rook: Square::H1,
-            },
-            CastlingSide::WLong => Self::Castling {
-                king: Square::E1,
-                rook: Square::A1,
-            },
-            CastlingSide::BShort => Self::Castling {
-                king: Square::E8,
-                rook: Square::H8,
-            },
-            CastlingSide::BLong => Self::Castling {
-                king: Square::E8,
-                rook: Square::A8,
-            },
-        }
+    pub fn quiet(from: Square, to: Square) -> Self {
+        Self::pack(from, to, MoveFlag::Quiet)
     }
 
-    pub fn quiet(role: Role, from: Square, to: Square) -> Self {
-        Self::Standard {
-            role,
-            from,
-            to,
-            capture: None,
-            promotion: None,
-        }
+    pub fn double_push(from: Square, to: Square) -> Self {
+        Self::pack(from, to, MoveFlag::DoublePush)
     }
 
-    pub fn capture(role: Role, from: Square, to: Square, capture: Role) -> Self {
-        Self::Standard {
-            role,
-            from,
-            to,
-            capture: Some(capture),
-            promotion: None,
-        }
+    pub fn capture(from: Square, to: Square) -> Self {
+        Self::pack(from, to, MoveFlag::Capture)
     }
 
-    pub fn prom(from: Square, to: Square, promotion: Role) -> Self {
-        Self::Standard {
-            role: Role::Pawn,
-            from,
-            to,
-            capture: None,
-            promotion: Some(promotion),
-        }
+    pub fn en_passant(from: Square, to: Square) -> Self {
+        Self::pack(from, to, MoveFlag::EnPassant)
     }
 
-    pub fn cap_prom(from: Square, to: Square, capture: Role, promotion: Role) -> Self {
-        Self::Standard {
-            role: Role::Pawn,
-            from,
-            to,
-            capture: Some(capture),
-            promotion: Some(promotion),
-        }
+    pub fn king_castle(king_from: Square, king_to: Square) -> Self {
+        Self::pack(king_from, king_to, MoveFlag::KingCastle)
+    }
+
+    pub fn queen_castle(king_from: Square, king_to: Square) -> Self {
+        Self::pack(king_from, king_to, MoveFlag::QueenCastle)
+    }
+
+    pub fn promotion(from: Square, to: Square, promo: Role, is_capture: bool) -> Self {
+        use crate::role::Role;
+        let flag = match (promo, is_capture) {
+            (Role::Knight, false) => MoveFlag::PromoN,
+            (Role::Bishop, false) => MoveFlag::PromoB,
+            (Role::Rook, false) => MoveFlag::PromoR,
+            (Role::Queen, false) => MoveFlag::PromoQ,
+            (Role::Knight, true) => MoveFlag::PromoCapN,
+            (Role::Bishop, true) => MoveFlag::PromoCapB,
+            (Role::Rook, true) => MoveFlag::PromoCapR,
+            (Role::Queen, true) => MoveFlag::PromoCapQ,
+            _ => unreachable!("invalid promotion role"),
+        };
+        Self::pack(from, to, flag)
     }
 
     pub fn from(&self) -> Square {
-        match self {
-            Move::Standard { from, .. } => *from,
-            Move::EnPassant { from, .. } => *from,
-            Move::Castling { king, .. } => *king,
-        }
+        unsafe { Square::from_u32_unchecked(((self.0 >> FROM_SHIFT) & SQ_MASK) as u32) }
     }
 
     pub fn to(&self) -> Square {
-        match self {
-            Move::Standard { to, .. } => *to,
-            Move::EnPassant { to, .. } => *to,
-            Move::Castling { rook, .. } => *rook,
-        }
+        unsafe { Square::from_u32_unchecked(((self.0 >> TO_SHIFT) & SQ_MASK) as u32) }
     }
 
-    pub fn role(&self) -> Role {
-        match self {
-            Move::Standard { role, .. } => *role,
-            Move::EnPassant { .. } => Pawn,
-            Move::Castling { .. } => Role::King,
-        }
+    pub fn flag(&self) -> MoveFlag {
+        MoveFlag::from_bits((self.0 >> FLAG_SHIFT) & FLAG_MASK)
     }
 
-    pub fn captured_role(&self) -> Option<Role> {
-        match self {
-            Move::Standard { capture, .. } => *capture,
-            Move::EnPassant { .. } => Some(Pawn),
-            Move::Castling { .. } => None,
-        }
+    pub fn is_capture(&self) -> bool {
+        self.flag().is_capture()
+    }
+
+    pub fn is_promotion(&self) -> bool {
+        self.flag().is_promotion()
+    }
+
+    pub fn is_castling(&self) -> bool {
+        matches!(self.flag(), MoveFlag::KingCastle | MoveFlag::QueenCastle)
     }
 
     #[rustfmt::skip]
     pub fn to_uci(&self) -> String {
-        let (from, to, maybe_prom) = match *self {
-            Move::Standard { from, to, promotion, .. } => (from, to, promotion),
-            Move::EnPassant { from, to } => (from, to, None),
-            Move::Castling { king, rook } if matches!(rook, Square::A1 | Square::A8) => {
-                (king, rook.offset_checked(2), None)
-            }
-            Move::Castling { king, rook } if matches!(rook, Square::H1 | Square::H8) => {
-                (king, rook.offset_checked(-1), None)
-            }
-            Move::Castling { .. } => unreachable!("all valid possibilities are handled above"),
-        };
-
-        // UCI move is always 4 or 5 ASCII bytes long
+        let (from, to) = (self.from(), self.to());
         let mut buffer = String::with_capacity(5);
-
         buffer.push(from.file().char());
         buffer.push(from.rank().char());
         buffer.push(to.file().char());
         buffer.push(to.rank().char());
-
-        if let Some(prom) = maybe_prom {
-            buffer.push(prom.char());
+        if self.flag().is_promotion() {
+            buffer.push(self.flag().promo_role().char());
         }
-
         buffer
+    }
+}
+
+impl Debug for Move {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("Move").field(&format!("m => {} | f => {:?}", self.to_uci(), self.flag())).finish()
     }
 }

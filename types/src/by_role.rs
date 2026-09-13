@@ -1,3 +1,5 @@
+use std::hint::unreachable_unchecked;
+
 use crate::{bitboard::Bitboard, role::Role, square::Square};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -128,11 +130,35 @@ impl ByRole<Bitboard> {
 
         unreachable!("peek_role_checked on empty square {square}")
     }
+
+    /// caller should guarantee that Square does correspont to existing piece on bitboard
+    pub unsafe fn peek_role_unchecked(&self, square: Square) -> Role {
+        if self.pawn.is_square_set(square) {
+            return Role::Pawn;
+        }
+        if self.knight.is_square_set(square) {
+            return Role::Knight;
+        }
+        if self.bishop.is_square_set(square) {
+            return Role::Bishop;
+        }
+        if self.rook.is_square_set(square) {
+            return Role::Rook;
+        }
+        if self.queen.is_square_set(square) {
+            return Role::Queen;
+        }
+        if self.king.is_square_set(square) {
+            return Role::King;
+        }
+
+        unsafe { unreachable_unchecked() }
+    }
 }
 
 #[cfg(test)]
 mod by_role_tests {
-    
+
     use crate::{
         bitboard::{Bitboard, ToBitboard},
         role::Role,

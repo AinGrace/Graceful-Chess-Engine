@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use rayon::prelude::*;
 use shakmaty::{Chess, Move as TheirMove, Position as TheirPosition, fen::Fen as TheirFen};
 use types::{MoveList, chess_move::Move, role::Role, square::Square};
@@ -35,18 +37,28 @@ fn mismatch_test() {
     let fen: Fen = raw_fen.parse().unwrap();
     let mut chessboard: Position = fen.try_to_position().unwrap();
 
-    chessboard.do_move_inner(Move::capture(
-        Role::Pawn,
-        Square::G2,
-        Square::H3,
-        Role::Pawn,
-    ));
-
     dbg!(&chessboard);
-    println!("whites -> {:#?}", chessboard.board().whites());
-    println!("blacks -> {:#?}", chessboard.board().blacks());
-    // let moves = chessboard.legal_moves();
-    // dbg!(moves);
+
+    chessboard
+        .do_move(Move::capture(Square::G2, Square::H3))
+        .unwrap();
+    println!("after g2h3: {:?}", &chessboard);
+    chessboard
+        .do_move(Move::capture(Square::E6, Square::D5))
+        .unwrap();
+    println!("after e6d5: {:?}", &chessboard);
+    chessboard
+        .do_move(Move::capture(Square::E4, Square::D5))
+        .unwrap();
+    println!("after e4d5: {:?}", &chessboard);
+    chessboard
+        .do_move(Move::capture(Square::B4, Square::C3))
+        .unwrap();
+    println!("after b4c3: {:?}", &chessboard);
+    chessboard
+        .do_move(Move::queen_castle(Square::E1, Square::C1))
+        .unwrap();
+    println!("after a2a4: {:?}", &chessboard);
 }
 
 #[test]
@@ -101,7 +113,7 @@ fn perft_depth_6_equals_119_060_324() {
 #[test]
 fn perft_depth_7_equals_3_195_901_860() {
     let mut chessboard = Position::new();
-    let res = perft_make_unmake(&mut chessboard, 7);
+    let res = perft(&mut chessboard, 7);
     assert_eq!(res, 3195901860);
 }
 
@@ -221,7 +233,14 @@ impl HistoryChessBoard {
     }
 
     fn do_move_inner_checked(&mut self, mv: Move) {
-        self.inner.do_move_inner(mv);
+        match self.inner.do_move(mv) {
+            Ok(_) => (),
+            Err(e) => {
+                println!("{e}");
+                println!("fen -> {}", self.inner.to_fen());
+                panic!()
+            }
+        }
         self.history.push(mv);
     }
 }
@@ -336,7 +355,8 @@ fn perft_tt(chessboard: &Position, dep: u32, tt: &mut PerftTranspositions) -> u6
         .iter()
         .map(|move_| {
             let mut board_clone = chessboard.clone();
-            board_clone.do_move_inner(*move_);
+            //SAFETY move_ is safely generated through legal_moves()
+            unsafe { board_clone.do_move_unchecked(*move_) };
             perft_tt(&board_clone, dep - 1, tt)
         })
         .sum();
@@ -357,7 +377,8 @@ fn perft_parallel(chessboard: &Position, dep: u32) -> u64 {
         .par_iter()
         .map(|move_| {
             let mut board_clone = chessboard.clone();
-            board_clone.do_move_inner(*move_);
+            //SAFETY move_ is safely generated through legal_moves()
+            unsafe { board_clone.do_move_unchecked(*move_) };
             let mut tt = PerftTranspositions::new(128);
             perft_tt(&board_clone, dep - 1, &mut tt)
         })
@@ -379,9 +400,10 @@ pub fn perft_make_unmake(pos: &mut Position, dep: u32) -> u64 {
     moves
         .iter()
         .map(|move_| {
-            let undo = pos.do_move_inner(*move_);
+            //SAFETY move_ is safely generated through legal_moves()
+            let undo = unsafe { pos.do_move_unchecked(*move_) };
             let nodes = perft(pos, dep - 1);
-            pos.undo_move(undo);
+            unsafe { pos.undo_move(undo) };
 
             nodes
         })
@@ -404,7 +426,8 @@ pub fn perft(chessboard: &Position, dep: u32) -> u64 {
         .iter()
         .map(|move_| {
             let mut board_clone = chessboard.clone();
-            board_clone.do_move_inner(*move_);
+            //SAFETY move_ is safely generated through legal_moves()
+            unsafe { board_clone.do_move_unchecked(*move_) };
             perft(&board_clone, dep - 1)
         })
         .sum()
@@ -418,17 +441,47 @@ fn perft_comparing_inner(our: HistoryChessBoard, their: Chess, dep: u32) -> u64 
     let our_moves = our.legal_moves();
     let their_moves = their.legal_moves();
 
-    if our_moves.len() != their_moves.len() {
-        println!("We generated -> {}", our_moves.len());
-        println!("our moves -> {:#?}", our_moves);
+    let their_fen = TheirFen::from_position(&their, shakmaty::EnPassantMode::Always).to_string();
+    let our_fen = our.inner.to_fen().to_string();
 
+    if their_fen != our_fen {
+        println!("Move history -> {:#?}", our.history);
+
+        let our_set: HashSet<Move> = HashSet::from_iter(our_moves.iter().copied());
+        let their_set = HashSet::from_iter(their_moves.iter().map(|m| translate_move(*m)));
+
+        let differences: Vec<&Move> = our_set.symmetric_difference(&their_set).collect();
+        
+        println!("OUR board -> {:#?}", our.inner);
+        println!("THEIR board -> {:#?}", their);
+
+        println!("We generated -> {}", our_moves.len());
         println!("They generated -> {}", their_moves.len());
+        println!("diff -> {differences:#?}");
+
+        println!("{their_fen}");
+        println!("{our_fen}");
+
+        panic!("FEN mismatch");
+    }
+
+    if our_moves.len() != their_moves.len() {
+        println!("our moves -> {:#?}", our_moves);
         println!("their moves -> {:#?}", their_moves);
 
         println!("Move history -> {:#?}", our.history);
 
         println!("OUR board -> {:#?}", our.inner);
-        // println!("THEIR board -> {:#?}", their);
+        println!("our fen -> {}", our.inner.to_fen());
+
+        let our_set: HashSet<Move> = HashSet::from_iter(our_moves.iter().copied());
+        let their_set = HashSet::from_iter(their_moves.iter().map(|m| translate_move(*m)));
+
+        let differences: Vec<&Move> = our_set.symmetric_difference(&their_set).collect();
+
+        println!("We generated -> {}", our_moves.len());
+        println!("They generated -> {}", their_moves.len());
+        println!("diff -> {differences:#?}");
 
         panic!("Move mismatch");
     }
@@ -455,20 +508,77 @@ fn translate_move(their_move: TheirMove) -> Move {
             capture,
             to,
             promotion,
-        } => Move::Standard {
-            role: Role::from_char(role.char()).unwrap(),
-            from: Square::from_u32_checked(from.to_u32()),
-            to: Square::from_u32_checked(to.to_u32()),
-            capture: capture.map_or(None, |r| Role::from_char(r.char())),
-            promotion: promotion.map_or(None, |p| Some(Role::from_char(p.char()).unwrap())),
-        },
-        TheirMove::EnPassant { from, to } => Move::EnPassant {
-            from: Square::from_u32_checked(from.to_u32()),
-            to: Square::from_u32_checked(to.to_u32()),
-        },
-        TheirMove::Castle { king, rook } => Move::Castling {
-            king: Square::from_u32_checked(king.to_u32()),
-            rook: Square::from_u32_checked(rook.to_u32()),
+        } => {
+            if role == shakmaty::Role::Pawn
+                && ((from.rank() == shakmaty::Rank::Second && to.rank() == shakmaty::Rank::Fourth)
+                    || (from.rank() == shakmaty::Rank::Seventh
+                        && to.rank() == shakmaty::Rank::Fifth))
+            {
+                return Move::double_push(
+                    Square::from_u32_checked(from.to_u32()),
+                    Square::from_u32_checked(to.to_u32()),
+                );
+            }
+
+            if capture.is_none() && promotion.is_none() {
+                return Move::quiet(
+                    Square::from_u32_checked(from.to_u32()),
+                    Square::from_u32_checked(to.to_u32()),
+                );
+            }
+
+            if capture.is_some() && promotion.is_none() {
+                return Move::capture(
+                    Square::from_u32_checked(from.to_u32()),
+                    Square::from_u32_checked(to.to_u32()),
+                );
+            }
+
+            if capture.is_none() && promotion.is_some() {
+                return Move::promotion(
+                    Square::from_u32_checked(from.to_u32()),
+                    Square::from_u32_checked(to.to_u32()),
+                    match promotion.unwrap() {
+                        shakmaty::Role::Pawn => Role::Pawn,
+                        shakmaty::Role::Knight => Role::Knight,
+                        shakmaty::Role::Bishop => Role::Bishop,
+                        shakmaty::Role::Rook => Role::Rook,
+                        shakmaty::Role::Queen => Role::Queen,
+                        _ => unreachable!(),
+                    },
+                    false,
+                );
+            }
+
+            if capture.is_some() && promotion.is_some() {
+                return Move::promotion(
+                    Square::from_u32_checked(from.to_u32()),
+                    Square::from_u32_checked(to.to_u32()),
+                    match promotion.unwrap() {
+                        shakmaty::Role::Pawn => Role::Pawn,
+                        shakmaty::Role::Knight => Role::Knight,
+                        shakmaty::Role::Bishop => Role::Bishop,
+                        shakmaty::Role::Rook => Role::Rook,
+                        shakmaty::Role::Queen => Role::Queen,
+                        _ => unreachable!(),
+                    },
+                    true,
+                );
+            }
+
+            panic!()
+        }
+        TheirMove::EnPassant { from, to } => Move::en_passant(
+            Square::from_u32_checked(from.to_u32()),
+            Square::from_u32_checked(to.to_u32()),
+        ),
+        TheirMove::Castle { king, rook } => match rook {
+            shakmaty::Square::A1 => Move::queen_castle(Square::E1, Square::C1),
+            shakmaty::Square::H1 => Move::king_castle(Square::E1, Square::G1),
+            shakmaty::Square::A8 => Move::queen_castle(Square::E8, Square::C8),
+            shakmaty::Square::H8 => Move::king_castle(Square::E8, Square::G8),
+
+            _ => unreachable!(),
         },
 
         TheirMove::Put { .. } => panic!("IMPOSSIBLE"),

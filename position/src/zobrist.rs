@@ -1,5 +1,12 @@
+use std::hint::unreachable_unchecked;
+
 use types::{
-    castlings::Castlings, chess_move::Move, color::Color, piece::Piece, role::Role, square::Square,
+    castlings::Castlings,
+    chess_move::{Move, MoveFlag},
+    color::Color,
+    piece::Piece,
+    role::Role,
+    square::Square,
 };
 
 use crate::position::Position;
@@ -61,7 +68,8 @@ pub fn compute_hash(pos: &Position) -> u64 {
     let mut hash = 0;
 
     pos.board().occupied().for_each(|sqr| {
-        let piece = pos.board().peek_checked(sqr);
+        // Occupied guarantees the existence of piece
+        let piece = unsafe { pos.board().peek_unchecked(sqr) };
         hash ^= ZOBRIST.piece(piece, sqr);
     });
 
@@ -80,6 +88,8 @@ pub fn compute_hash(pos: &Position) -> u64 {
 
 pub fn update_hash(
     hash: &mut u64,
+    moving_piece: Piece,
+    captured_role: Option<Role>,
     mv: Move,
     us: Color,
     old_ep: Option<Square>,
@@ -92,51 +102,53 @@ pub fn update_hash(
     }
     *hash ^= ZOBRIST.castlings[old_castling.as_usize()];
 
-    match mv {
-        Move::Standard {
-            role,
-            from,
-            to,
-            capture,
-            promotion,
-        } => {
-            let moving_piece = Piece::of(role, us);
-            let dest_piece = match promotion {
-                Some(promo) => Piece::of(promo, us),
-                None => moving_piece,
+    let from = mv.from();
+    let to = mv.to();
+
+    match mv.flag() {
+        MoveFlag::KingCastle | MoveFlag::QueenCastle => {
+            let (rook_from, rook_to) = match to {
+                Square::C1 => (Square::A1, Square::D1),
+                Square::C8 => (Square::A8, Square::D8),
+                Square::G1 => (Square::H1, Square::F1),
+                Square::G8 => (Square::H8, Square::F8),
+
+                _ => unsafe { unreachable_unchecked() },
+            };
+            *hash ^= ZOBRIST.piece(moving_piece, from);
+            *hash ^= ZOBRIST.piece(moving_piece, to);
+            *hash ^= ZOBRIST.piece(moving_piece, rook_from);
+            *hash ^= ZOBRIST.piece(moving_piece, rook_to);
+        }
+
+        MoveFlag::EnPassant => {
+            let captured_sqr = Square::of(to.file(), from.rank());
+
+            *hash ^= ZOBRIST.piece(moving_piece, from);
+            *hash ^= ZOBRIST.piece(Piece::of(Role::Pawn, !us), captured_sqr);
+            *hash ^= ZOBRIST.piece(moving_piece, to);
+        }
+
+        rest => {
+            let dest_piece = match rest {
+                MoveFlag::PromoN | MoveFlag::PromoCapN => Piece::of(Role::Knight, us),
+                MoveFlag::PromoB | MoveFlag::PromoCapB => Piece::of(Role::Bishop, us),
+                MoveFlag::PromoR | MoveFlag::PromoCapR => Piece::of(Role::Rook, us),
+                MoveFlag::PromoQ | MoveFlag::PromoCapQ => Piece::of(Role::Queen, us),
+
+                _no_prom => moving_piece,
             };
 
             *hash ^= ZOBRIST.piece(moving_piece, from);
 
-            if let Some(captured) = capture {
-                *hash ^= ZOBRIST.piece(Piece::of(captured, !us), to);
+            if mv.is_capture() {
+                *hash ^= ZOBRIST.piece(
+                    Piece::of(unsafe { captured_role.unwrap_unchecked() }, !us),
+                    to,
+                );
             }
 
             *hash ^= ZOBRIST.piece(dest_piece, to);
-        }
-
-        Move::EnPassant { from, to } => {
-            let our_pawn = Piece::of(Role::Pawn, us);
-            let captured_sqr = Square::of(to.file(), from.rank());
-
-            *hash ^= ZOBRIST.piece(our_pawn, from);
-            *hash ^= ZOBRIST.piece(Piece::of(Role::Pawn, !us), captured_sqr);
-            *hash ^= ZOBRIST.piece(our_pawn, to);
-        }
-
-        Move::Castling { king, rook } => {
-            let (king_dest, rook_dest) = match rook {
-                Square::H1 => (Square::G1, Square::F1),
-                Square::A1 => (Square::C1, Square::D1),
-                Square::H8 => (Square::G8, Square::F8),
-                Square::A8 => (Square::C8, Square::D8),
-                _illegal => unreachable!("Invalid rook square for castling in zobrist update hash"),
-            };
-
-            *hash ^= ZOBRIST.piece(Piece::of(Role::King, us), king);
-            *hash ^= ZOBRIST.piece(Piece::of(Role::Rook, us), rook);
-            *hash ^= ZOBRIST.piece(Piece::of(Role::King, us), king_dest);
-            *hash ^= ZOBRIST.piece(Piece::of(Role::Rook, us), rook_dest);
         }
     }
 

@@ -214,7 +214,8 @@ impl PositionCmd {
 
         for raw_uci_move in &cmds[moves_idx + 1..cmds.len()] {
             if let Some(uci_move) = pos.parse_uci(raw_uci_move) {
-                pos.do_move_inner(uci_move);
+                //SAFETY: parsed uci_move is quaranteed to be safe
+                unsafe { pos.do_move_unchecked(uci_move) };
                 buff.push(uci_move);
             } else {
                 // TODO: return Err instead of silent failure

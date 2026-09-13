@@ -1,13 +1,22 @@
 use std::{
     error::Error,
     fmt::{Debug, Display},
+    hint::unreachable_unchecked,
     mem,
     num::NonZeroU32,
+    ptr::read,
 };
 
 use types::{
-    MoveList, bitboard::Bitboard, castlings::Castlings, chess_move::Move, color::Color,
-    piece::Piece, rank::Rank, role::Role, square::Square,
+    MoveList,
+    bitboard::Bitboard,
+    castlings::Castlings,
+    chess_move::{Move, MoveFlag},
+    color::Color,
+    piece::Piece,
+    rank::Rank,
+    role::Role,
+    square::Square,
 };
 
 use crate::{board::Board, fen::Fen, move_gen, zobrist};
@@ -82,6 +91,7 @@ pub struct Undo {
     half_moves: u32,
     full_moves: NonZeroU32,
     zobrist_hash: u64,
+    captured_piece: Option<Piece>,
 }
 
 #[derive(Clone, PartialEq, Eq)]
@@ -174,6 +184,10 @@ impl Position {
         self.zobrist_hash
     }
 
+    pub fn zobrist_hash_mut(&mut self) -> &mut u64 {
+        &mut self.zobrist_hash
+    }
+
     /// Generate and return a list of legal moves for the curent position
     pub fn legal_moves(&self) -> MoveList {
         move_gen::gen_legal_moves_for(self, self.turn())
@@ -207,11 +221,10 @@ impl Position {
     }
 
     /// Checks move for legality and then executes it
-    ///
-    /// consider do_move_inner_checked if you can guarantee validity TODO
     pub fn do_move(&mut self, mv: Move) -> Result<Undo, InvalidMoveError> {
         if self.is_legal_move(mv) {
-            Ok(self.do_move_inner(mv))
+            // SAFERY: mv is checked to be a valid move
+            Ok(unsafe { self.do_move_unchecked(mv) })
         } else {
             // TODO consider using long algebraic notation instead of uci
             Err(InvalidMoveError {
@@ -233,7 +246,8 @@ impl Position {
             }
         };
 
-        Ok(self.do_move_inner(uci_move))
+        //SAFETY: uci_move is checked to be a valid move
+        Ok(unsafe { self.do_move_unchecked(uci_move) })
     }
 
     pub fn uci_move_checked(&mut self, raw_uci: &str) -> Undo {
@@ -241,26 +255,54 @@ impl Position {
             .parse_uci(raw_uci)
             .unwrap_or_else(|| panic!("invalid uci {raw_uci}"));
 
-        self.do_move_inner(uci_move)
+        //SAFETY: uci_move is checked to be a valid move
+        unsafe { self.do_move_unchecked(uci_move) }
     }
 
-    pub fn undo_move(&mut self, undo: Undo) {
+    pub unsafe fn undo_move(&mut self, undo: Undo) {
         self.turn = !self.turn;
 
         let board = &mut self.board;
-        match undo.m {
-            Move::Standard {
-                role: _role,
-                from,
-                to,
-                capture,
-                promotion,
-            } => {
-                let our_piece = board
-                    .take_piece_at(to)
-                    .expect("a piece is quaranteed to be there");
+        let mv = undo.m;
+        let from = mv.from();
+        let to = mv.to();
 
-                if promotion.is_some() {
+        match mv.flag() {
+            MoveFlag::KingCastle | MoveFlag::QueenCastle => {
+                let (rook_from, rook_to) = match to {
+                    Square::C1 => (Square::A1, Square::D1),
+                    Square::C8 => (Square::A8, Square::D8),
+                    Square::G1 => (Square::H1, Square::F1),
+                    Square::G8 => (Square::H8, Square::F8),
+
+                    _ => unsafe { unreachable_unchecked() },
+                };
+
+                // SAFETY: to is quaranteed to be valid
+                let king_piece = unsafe { board.take_piece_at_unchecked(to) };
+                let rook_piece = unsafe { board.take_piece_at_unchecked(rook_to) };
+
+                board.set_piece_at(king_piece, from);
+                board.set_piece_at(rook_piece, rook_from);
+            }
+            MoveFlag::EnPassant => {
+                // SAFETY: same as above
+                let our_pawn = unsafe { board.take_piece_at_unchecked(to) };
+                let enemy_pawn = if self.turn == Color::White {
+                    Piece::BPawn
+                } else {
+                    Piece::WPawn
+                };
+
+                board.set_piece_at(our_pawn, from);
+                board.set_piece_at(enemy_pawn, Square::of(to.file(), from.rank()));
+            }
+
+            rest => {
+                // SAFETY: to is quaranteed to be valid
+                let our_piece = unsafe { board.take_piece_at_unchecked(to) };
+
+                if rest.is_promotion() {
                     let our_pawn = if self.turn == Color::White {
                         Piece::WPawn
                     } else {
@@ -271,39 +313,9 @@ impl Position {
                     board.set_piece_at(our_piece, from);
                 }
 
-                if let Some(captured) = capture {
-                    board.set_piece_at(captured.to_piece(!self.turn), to);
+                if let Some(captured) = undo.captured_piece {
+                    board.set_piece_at(captured, to);
                 }
-            }
-            Move::EnPassant { from, to } => {
-                let our_pawn = board.take_piece_at(to).expect("pawn is quaranteed to be");
-                let enemy_pawn = if self.turn == Color::White {
-                    Piece::BPawn
-                } else {
-                    Piece::WPawn
-                };
-
-                board.set_piece_at(our_pawn, from);
-                board.set_piece_at(enemy_pawn, Square::of(to.file(), from.rank()));
-            }
-            Move::Castling { king, rook } => {
-                let (king_dest, rook_dest) = match rook {
-                    Square::H1 => (Square::G1, Square::F1),
-                    Square::A1 => (Square::C1, Square::D1),
-                    Square::H8 => (Square::G8, Square::F8),
-                    Square::A8 => (Square::C8, Square::D8),
-                    _illegal => unreachable!("Illegal rook square for castling"),
-                };
-
-                let king_piece = board
-                    .take_piece_at(king_dest)
-                    .expect("king is quaranteed to be");
-                let rook_piece = board
-                    .take_piece_at(rook_dest)
-                    .expect("rook is quaranteed to be");
-
-                board.set_piece_at(king_piece, king);
-                board.set_piece_at(rook_piece, rook);
             }
         }
 
@@ -327,20 +339,16 @@ impl Position {
         legal_moves.contains(&mv)
     }
 
-    /// # PANICS
-    /// Calling this method without validity quarantees by the caller may corrupt the state of ChessBoard
-    ///
-    /// which may lead to following:
-    ///
-    /// **ANY** subsequent call of **ANY** method of ChessBoard can panic at **ANY** time
-    pub fn do_move_inner(&mut self, mv: Move) -> Undo {
-        let undo = Undo {
+    /// Calling this method without validity quarantees by the caller may corrupt the state of Position
+    pub unsafe fn do_move_unchecked(&mut self, mv: Move) -> Undo {
+        let mut undo = Undo {
             m: mv,
             castlings: self.castlings,
             ep_square: self.ep_square(),
             half_moves: self.half_moves,
             full_moves: self.full_moves,
             zobrist_hash: self.zobrist_hash,
+            captured_piece: None,
         };
 
         let us = self.turn;
@@ -349,26 +357,58 @@ impl Position {
         let old_ep = self.ep_square.take(); // remove the ep square
         let old_castling = self.castlings;
 
-        match mv {
-            Move::Standard {
-                role,
-                from,
-                to,
-                capture,
-                promotion,
-            } => {
+        let from = mv.from();
+        let to = mv.to();
+
+        let moving_piece = unsafe { board.peek_unchecked(from) };
+        let mut captured_role = None;
+
+        match mv.flag() {
+            MoveFlag::KingCastle | MoveFlag::QueenCastle => {
+                let (rook_from, rook_to) = match to {
+                    Square::C1 => (Square::A1, Square::D1),
+                    Square::C8 => (Square::A8, Square::D8),
+                    Square::G1 => (Square::H1, Square::F1),
+                    Square::G8 => (Square::H8, Square::F8),
+
+                    _ => unsafe { unreachable_unchecked() },
+                };
+
+                board.discard_piece_at(from);
+                board.discard_piece_at(rook_from);
+
+                board.set_piece_at(Piece::of(Role::King, us), to);
+                board.set_piece_at(Piece::of(Role::Rook, us), rook_to);
+
+                self.castlings.remove_all_of(us);
+
+                self.half_moves += 1;
+            }
+            MoveFlag::EnPassant => {
+                self.half_moves = 0;
+                let our_pawn = Piece::of(Role::Pawn, us);
+                let captured_sqr = Square::of(to.file(), from.rank());
+
+                board.discard_piece_at(captured_sqr);
+                board.discard_piece_at(from);
+                board.set_piece_at(our_pawn, to);
+
+                undo.captured_piece = Some(Piece::of(Role::Pawn, !us));
+                captured_role = Some(Role::Pawn);
+            }
+            rest => {
                 // set en_passaunt on pawn double push
-                if role == Role::Pawn && Square::abs_diff(from, to) == 16 {
+                if matches!(rest, MoveFlag::DoublePush) {
                     let ep = ((from as u8 + to as u8) >> 1) as u32;
-                    self.ep_square = Some(Square::from_u32_checked(ep));
+                    self.ep_square = Some(unsafe { Square::from_u32_unchecked(ep) });
                 }
 
                 board.discard_piece_at(from);
 
-                if let Some(captured) = capture {
-                    board.discard_piece_at(to);
+                if rest.is_capture() {
+                    let captured = unsafe { board.take_piece_at_unchecked(to) };
 
-                    if captured == Role::Rook {
+                    if captured.role() == Role::Rook {
                         // change castling rights on capture
                         match (us, to) {
                             (Color::Black, Square::H1) => self.castlings.remove_w_short(),
@@ -379,18 +419,24 @@ impl Position {
                             _rest => (),
                         }
                     }
+
+                    undo.captured_piece = Some(captured);
+                    captured_role = Some(captured.role());
                 }
 
                 // if promotion exists set it at destination square, otherwise set the moving piece
-                let piece = match promotion {
-                    Some(promo) => Piece::of(promo, us),
-                    None => Piece::of(role, us),
+                let piece = match rest {
+                    MoveFlag::PromoN | MoveFlag::PromoCapN => Piece::of(Role::Knight, us),
+                    MoveFlag::PromoB | MoveFlag::PromoCapB => Piece::of(Role::Bishop, us),
+                    MoveFlag::PromoR | MoveFlag::PromoCapR => Piece::of(Role::Rook, us),
+                    MoveFlag::PromoQ | MoveFlag::PromoCapQ => Piece::of(Role::Queen, us),
+                    _ => moving_piece,
                 };
 
                 board.set_piece_at(piece, to);
 
                 // change castling rights on quiet move
-                match (us, role, from) {
+                match (us, moving_piece.role(), from) {
                     (Color::White, Role::King, Square::E1) => self.castlings.remove_white(),
                     (Color::White, Role::Rook, Square::A1) => self.castlings.remove_w_long(),
                     (Color::White, Role::Rook, Square::H1) => self.castlings.remove_w_short(),
@@ -402,44 +448,18 @@ impl Position {
                 }
 
                 // zeroify half moves on irreversible move, increment otherwise
-                if role == Role::Pawn || capture.is_some() {
+                if moving_piece.role() == Role::Pawn || rest.is_capture() {
                     self.half_moves = 0;
                 } else {
                     self.half_moves += 1;
                 }
             }
-            Move::EnPassant { from, to } => {
-                self.half_moves = 0;
-                let our_pawn = Piece::of(Role::Pawn, us);
-                let captured_sqr = Square::of(to.file(), from.rank());
-
-                board.discard_piece_at(captured_sqr);
-                board.discard_piece_at(from);
-                board.set_piece_at(our_pawn, to);
-            }
-            Move::Castling { king, rook } => {
-                let (king_dest, rook_dest) = match rook {
-                    Square::H1 => (Square::G1, Square::F1),
-                    Square::A1 => (Square::C1, Square::D1),
-                    Square::H8 => (Square::G8, Square::F8),
-                    Square::A8 => (Square::C8, Square::D8),
-                    _illegal => unreachable!("Illegal rook square for castling"),
-                };
-
-                board.discard_piece_at(king);
-                board.discard_piece_at(rook);
-
-                board.set_piece_at(Piece::of(Role::King, us), king_dest);
-                board.set_piece_at(Piece::of(Role::Rook, us), rook_dest);
-
-                self.castlings.remove_all_of(us);
-
-                self.half_moves += 1;
-            }
         }
 
         zobrist::update_hash(
             &mut self.zobrist_hash,
+            moving_piece,
+            captured_role,
             mv,
             us,
             old_ep,
@@ -574,8 +594,6 @@ impl Default for Position {
 #[cfg(test)]
 mod tests {
 
-    use types::chess_move::CastlingSide;
-
     use super::*;
     use rand::seq::IndexedRandom;
 
@@ -585,69 +603,69 @@ mod tests {
         println!("{board:#?}");
 
         let moves = vec![
-            Move::quiet(Role::Pawn, Square::D2, Square::D4),
-            Move::quiet(Role::Pawn, Square::D7, Square::D5),
-            Move::quiet(Role::Knight, Square::G1, Square::F3),
-            Move::quiet(Role::Knight, Square::B8, Square::C6),
-            Move::quiet(Role::Knight, Square::B1, Square::C3),
-            Move::quiet(Role::Knight, Square::G8, Square::F6),
-            Move::quiet(Role::Pawn, Square::E2, Square::E3),
-            Move::quiet(Role::Pawn, Square::E7, Square::E6),
-            Move::quiet(Role::Pawn, Square::A2, Square::A3),
-            Move::quiet(Role::Pawn, Square::G7, Square::G6),
-            Move::quiet(Role::Bishop, Square::F1, Square::B5),
-            Move::quiet(Role::Pawn, Square::A7, Square::A6),
-            Move::capture(Role::Bishop, Square::B5, Square::C6, Role::Knight),
-            Move::capture(Role::Pawn, Square::B7, Square::C6, Role::Bishop),
-            Move::quiet(Role::Knight, Square::F3, Square::E5),
-            Move::quiet(Role::Queen, Square::D8, Square::D6),
-            Move::quiet(Role::Pawn, Square::F2, Square::F3),
-            Move::quiet(Role::Pawn, Square::C6, Square::C5),
-            Move::castling(CastlingSide::WShort),
-            Move::quiet(Role::Pawn, Square::C5, Square::C4),
-            Move::quiet(Role::Pawn, Square::E3, Square::E4),
-            Move::quiet(Role::Pawn, Square::C7, Square::C6),
-            Move::quiet(Role::Bishop, Square::C1, Square::F4),
-            Move::quiet(Role::Pawn, Square::A6, Square::A5),
-            Move::quiet(Role::Knight, Square::C3, Square::A4),
-            Move::quiet(Role::Knight, Square::F6, Square::H5),
-            Move::quiet(Role::Queen, Square::D1, Square::D2),
-            Move::quiet(Role::Pawn, Square::F7, Square::F5),
-            Move::capture(Role::Pawn, Square::E4, Square::F5, Role::Pawn),
-            Move::capture(Role::Pawn, Square::E6, Square::F5, Role::Pawn),
-            Move::quiet(Role::Rook, Square::F1, Square::E1),
-            Move::quiet(Role::Bishop, Square::C8, Square::D7),
-            Move::capture(Role::Knight, Square::E5, Square::C6, Role::Pawn),
-            Move::quiet(Role::King, Square::E8, Square::F7),
-            Move::capture(Role::Bishop, Square::F4, Square::D6, Role::Queen),
-            Move::capture(Role::Bishop, Square::F8, Square::D6, Role::Bishop),
-            Move::quiet(Role::Knight, Square::C6, Square::E5),
-            Move::quiet(Role::King, Square::F7, Square::G7),
-            Move::capture(Role::Knight, Square::E5, Square::D7, Role::Bishop),
-            Move::quiet(Role::Pawn, Square::H7, Square::H6),
-            Move::quiet(Role::Knight, Square::A4, Square::B6),
-            Move::quiet(Role::Rook, Square::A8, Square::A7),
-            Move::quiet(Role::Knight, Square::D7, Square::C5),
-            Move::quiet(Role::Bishop, Square::D6, Square::F4),
-            Move::quiet(Role::Knight, Square::C5, Square::E6),
-            Move::quiet(Role::King, Square::G7, Square::F6),
-            Move::capture(Role::Knight, Square::E6, Square::F4, Role::Bishop),
-            Move::capture(Role::Knight, Square::H5, Square::F4, Role::Knight),
-            Move::capture(Role::Queen, Square::D2, Square::F4, Role::Knight),
-            Move::quiet(Role::Pawn, Square::G6, Square::G5),
-            Move::quiet(Role::Queen, Square::F4, Square::E5),
-            Move::quiet(Role::King, Square::F6, Square::F7),
-            Move::capture(Role::Queen, Square::E5, Square::H8, Role::Rook),
-            Move::quiet(Role::King, Square::F7, Square::G6),
-            Move::quiet(Role::Pawn, Square::G2, Square::G4),
-            Move::quiet(Role::Rook, Square::A7, Square::H7),
-            Move::capture(Role::Queen, Square::H8, Square::H7, Role::Rook),
-            Move::capture(Role::King, Square::G6, Square::H7, Role::Queen),
-            Move::quiet(Role::Rook, Square::E1, Square::E7),
-            Move::quiet(Role::King, Square::H7, Square::G6),
-            Move::quiet(Role::Rook, Square::A1, Square::E1),
-            Move::quiet(Role::King, Square::G6, Square::F6),
-            Move::quiet(Role::Rook, Square::E1, Square::E6),
+            Move::quiet(Square::D2, Square::D4),
+            Move::quiet(Square::D7, Square::D5),
+            Move::quiet(Square::G1, Square::F3),
+            Move::quiet(Square::B8, Square::C6),
+            Move::quiet(Square::B1, Square::C3),
+            Move::quiet(Square::G8, Square::F6),
+            Move::quiet(Square::E2, Square::E3),
+            Move::quiet(Square::E7, Square::E6),
+            Move::quiet(Square::A2, Square::A3),
+            Move::quiet(Square::G7, Square::G6),
+            Move::quiet(Square::F1, Square::B5),
+            Move::quiet(Square::A7, Square::A6),
+            Move::capture(Square::B5, Square::C6),
+            Move::capture(Square::B7, Square::C6),
+            Move::quiet(Square::F3, Square::E5),
+            Move::quiet(Square::D8, Square::D6),
+            Move::quiet(Square::F2, Square::F3),
+            Move::quiet(Square::C6, Square::C5),
+            Move::king_castle(Square::E1, Square::G1),
+            Move::quiet(Square::C5, Square::C4),
+            Move::quiet(Square::E3, Square::E4),
+            Move::quiet(Square::C7, Square::C6),
+            Move::quiet(Square::C1, Square::F4),
+            Move::quiet(Square::A6, Square::A5),
+            Move::quiet(Square::C3, Square::A4),
+            Move::quiet(Square::F6, Square::H5),
+            Move::quiet(Square::D1, Square::D2),
+            Move::quiet(Square::F7, Square::F5),
+            Move::capture(Square::E4, Square::F5),
+            Move::capture(Square::E6, Square::F5),
+            Move::quiet(Square::F1, Square::E1),
+            Move::quiet(Square::C8, Square::D7),
+            Move::capture(Square::E5, Square::C6),
+            Move::quiet(Square::E8, Square::F7),
+            Move::capture(Square::F4, Square::D6),
+            Move::capture(Square::F8, Square::D6),
+            Move::quiet(Square::C6, Square::E5),
+            Move::quiet(Square::F7, Square::G7),
+            Move::capture(Square::E5, Square::D7),
+            Move::quiet(Square::H7, Square::H6),
+            Move::quiet(Square::A4, Square::B6),
+            Move::quiet(Square::A8, Square::A7),
+            Move::quiet(Square::D7, Square::C5),
+            Move::quiet(Square::D6, Square::F4),
+            Move::quiet(Square::C5, Square::E6),
+            Move::quiet(Square::G7, Square::F6),
+            Move::capture(Square::E6, Square::F4),
+            Move::capture(Square::H5, Square::F4),
+            Move::capture(Square::D2, Square::F4),
+            Move::quiet(Square::G6, Square::G5),
+            Move::quiet(Square::F4, Square::E5),
+            Move::quiet(Square::F6, Square::F7),
+            Move::capture(Square::E5, Square::H8),
+            Move::quiet(Square::F7, Square::G6),
+            Move::quiet(Square::G2, Square::G4),
+            Move::quiet(Square::A7, Square::H7),
+            Move::capture(Square::H8, Square::H7),
+            Move::capture(Square::G6, Square::H7),
+            Move::quiet(Square::E1, Square::E7),
+            Move::quiet(Square::H7, Square::G6),
+            Move::quiet(Square::A1, Square::E1),
+            Move::quiet(Square::G6, Square::F6),
+            Move::quiet(Square::E1, Square::E6),
         ];
 
         for mv in moves.into_iter() {
@@ -729,73 +747,73 @@ mod tests {
         let mut board = Position::new();
 
         let moves = vec![
-            Move::quiet(Role::Pawn, Square::D2, Square::D4),
-            Move::quiet(Role::Pawn, Square::D7, Square::D5),
-            Move::quiet(Role::Knight, Square::G1, Square::F3),
-            Move::quiet(Role::Knight, Square::B8, Square::C6),
-            Move::quiet(Role::Knight, Square::B1, Square::C3),
-            Move::quiet(Role::Knight, Square::G8, Square::F6),
-            Move::quiet(Role::Pawn, Square::E2, Square::E3),
-            Move::quiet(Role::Pawn, Square::E7, Square::E6),
-            Move::quiet(Role::Pawn, Square::A2, Square::A3),
-            Move::quiet(Role::Pawn, Square::G7, Square::G6),
-            Move::quiet(Role::Bishop, Square::F1, Square::B5),
-            Move::quiet(Role::Pawn, Square::A7, Square::A6),
-            Move::capture(Role::Bishop, Square::B5, Square::C6, Role::Knight),
-            Move::capture(Role::Pawn, Square::B7, Square::C6, Role::Bishop),
-            Move::quiet(Role::Knight, Square::F3, Square::E5),
-            Move::quiet(Role::Queen, Square::D8, Square::D6),
-            Move::quiet(Role::Pawn, Square::F2, Square::F3),
-            Move::quiet(Role::Pawn, Square::C6, Square::C5),
-            Move::castling(CastlingSide::WShort),
-            Move::quiet(Role::Pawn, Square::C5, Square::C4),
-            Move::quiet(Role::Pawn, Square::E3, Square::E4),
-            Move::quiet(Role::Pawn, Square::C7, Square::C6),
-            Move::quiet(Role::Bishop, Square::C1, Square::F4),
-            Move::quiet(Role::Pawn, Square::A6, Square::A5),
-            Move::quiet(Role::Knight, Square::C3, Square::A4),
-            Move::quiet(Role::Knight, Square::F6, Square::H5),
-            Move::quiet(Role::Queen, Square::D1, Square::D2),
-            Move::quiet(Role::Pawn, Square::F7, Square::F5),
-            Move::capture(Role::Pawn, Square::E4, Square::F5, Role::Pawn),
-            Move::capture(Role::Pawn, Square::E6, Square::F5, Role::Pawn),
-            Move::quiet(Role::Rook, Square::F1, Square::E1),
-            Move::quiet(Role::Bishop, Square::C8, Square::D7),
-            Move::capture(Role::Knight, Square::E5, Square::C6, Role::Pawn),
-            Move::quiet(Role::King, Square::E8, Square::F7),
-            Move::capture(Role::Bishop, Square::F4, Square::D6, Role::Queen),
-            Move::capture(Role::Bishop, Square::F8, Square::D6, Role::Bishop),
-            Move::quiet(Role::Knight, Square::C6, Square::E5),
-            Move::quiet(Role::King, Square::F7, Square::G7),
-            Move::capture(Role::Knight, Square::E5, Square::D7, Role::Bishop),
-            Move::quiet(Role::Pawn, Square::H7, Square::H6),
-            Move::quiet(Role::Knight, Square::A4, Square::B6),
-            Move::quiet(Role::Rook, Square::A8, Square::A7),
-            Move::quiet(Role::Knight, Square::D7, Square::C5),
-            Move::quiet(Role::Bishop, Square::D6, Square::F4),
-            Move::quiet(Role::Knight, Square::C5, Square::E6),
-            Move::quiet(Role::King, Square::G7, Square::F6),
-            Move::capture(Role::Knight, Square::E6, Square::F4, Role::Bishop),
-            Move::capture(Role::Knight, Square::H5, Square::F4, Role::Knight),
-            Move::capture(Role::Queen, Square::D2, Square::F4, Role::Knight),
-            Move::quiet(Role::Pawn, Square::G6, Square::G5),
-            Move::quiet(Role::Queen, Square::F4, Square::E5),
-            Move::quiet(Role::King, Square::F6, Square::F7),
-            Move::capture(Role::Queen, Square::E5, Square::H8, Role::Rook),
-            Move::quiet(Role::King, Square::F7, Square::G6),
-            Move::quiet(Role::Pawn, Square::G2, Square::G4),
-            Move::quiet(Role::Rook, Square::A7, Square::H7),
-            Move::capture(Role::Queen, Square::H8, Square::H7, Role::Rook),
-            Move::capture(Role::King, Square::G6, Square::H7, Role::Queen),
-            Move::quiet(Role::Rook, Square::E1, Square::E7),
-            Move::quiet(Role::King, Square::H7, Square::G6),
-            Move::quiet(Role::Rook, Square::A1, Square::E1),
-            Move::quiet(Role::King, Square::G6, Square::F6),
-            Move::quiet(Role::Rook, Square::E1, Square::E6),
+            Move::quiet(Square::D2, Square::D4),
+            Move::quiet(Square::D7, Square::D5),
+            Move::quiet(Square::G1, Square::F3),
+            Move::quiet(Square::B8, Square::C6),
+            Move::quiet(Square::B1, Square::C3),
+            Move::quiet(Square::G8, Square::F6),
+            Move::quiet(Square::E2, Square::E3),
+            Move::quiet(Square::E7, Square::E6),
+            Move::quiet(Square::A2, Square::A3),
+            Move::quiet(Square::G7, Square::G6),
+            Move::quiet(Square::F1, Square::B5),
+            Move::quiet(Square::A7, Square::A6),
+            Move::capture(Square::B5, Square::C6),
+            Move::capture(Square::B7, Square::C6),
+            Move::quiet(Square::F3, Square::E5),
+            Move::quiet(Square::D8, Square::D6),
+            Move::quiet(Square::F2, Square::F3),
+            Move::quiet(Square::C6, Square::C5),
+            Move::king_castle(Square::E1, Square::G1),
+            Move::quiet(Square::C5, Square::C4),
+            Move::quiet(Square::E3, Square::E4),
+            Move::quiet(Square::C7, Square::C6),
+            Move::quiet(Square::C1, Square::F4),
+            Move::quiet(Square::A6, Square::A5),
+            Move::quiet(Square::C3, Square::A4),
+            Move::quiet(Square::F6, Square::H5),
+            Move::quiet(Square::D1, Square::D2),
+            Move::quiet(Square::F7, Square::F5),
+            Move::capture(Square::E4, Square::F5),
+            Move::capture(Square::E6, Square::F5),
+            Move::quiet(Square::F1, Square::E1),
+            Move::quiet(Square::C8, Square::D7),
+            Move::capture(Square::E5, Square::C6),
+            Move::quiet(Square::E8, Square::F7),
+            Move::capture(Square::F4, Square::D6),
+            Move::capture(Square::F8, Square::D6),
+            Move::quiet(Square::C6, Square::E5),
+            Move::quiet(Square::F7, Square::G7),
+            Move::capture(Square::E5, Square::D7),
+            Move::quiet(Square::H7, Square::H6),
+            Move::quiet(Square::A4, Square::B6),
+            Move::quiet(Square::A8, Square::A7),
+            Move::quiet(Square::D7, Square::C5),
+            Move::quiet(Square::D6, Square::F4),
+            Move::quiet(Square::C5, Square::E6),
+            Move::quiet(Square::G7, Square::F6),
+            Move::capture(Square::E6, Square::F4),
+            Move::capture(Square::H5, Square::F4),
+            Move::capture(Square::D2, Square::F4),
+            Move::quiet(Square::G6, Square::G5),
+            Move::quiet(Square::F4, Square::E5),
+            Move::quiet(Square::F6, Square::F7),
+            Move::capture(Square::E5, Square::H8),
+            Move::quiet(Square::F7, Square::G6),
+            Move::quiet(Square::G2, Square::G4),
+            Move::quiet(Square::A7, Square::H7),
+            Move::capture(Square::H8, Square::H7),
+            Move::capture(Square::G6, Square::H7),
+            Move::quiet(Square::E1, Square::E7),
+            Move::quiet(Square::H7, Square::G6),
+            Move::quiet(Square::A1, Square::E1),
+            Move::quiet(Square::G6, Square::F6),
+            Move::quiet(Square::E1, Square::E6),
         ];
 
         for mv in moves {
-            board.do_move_inner(mv);
+            board.do_move(mv).unwrap();
             let updated_hash = board.zobrist_hash();
             let computed_hash = zobrist::compute_hash(&board);
 
@@ -810,13 +828,13 @@ mod tests {
         let initial_hash = board.zobrist_hash();
         let initial_fen = board.to_fen();
 
-        let mv = Move::quiet(Role::Pawn, Square::E2, Square::E4);
+        let mv = Move::quiet(Square::E2, Square::E4);
 
         let undo = board.do_move(mv).unwrap();
 
         assert_ne!(board.zobrist_hash(), initial_hash);
 
-        board.undo_move(undo);
+        unsafe { board.undo_move(undo) };
 
         assert_eq!(board.zobrist_hash(), initial_hash);
         assert_eq!(board.to_fen(), initial_fen);
@@ -826,21 +844,17 @@ mod tests {
     fn undo_capture_restores_piece() {
         let mut board = Position::new();
 
-        let _undo = board
-            .do_move(Move::quiet(Role::Pawn, Square::E2, Square::E4))
-            .unwrap();
+        let _undo = board.do_move(Move::quiet(Square::E2, Square::E4)).unwrap();
 
-        let _undo = board
-            .do_move(Move::quiet(Role::Pawn, Square::D7, Square::D5))
-            .unwrap();
+        let _undo = board.do_move(Move::quiet(Square::D7, Square::D5)).unwrap();
 
-        let mv = Move::capture(Role::Pawn, Square::E4, Square::D5, Role::Pawn);
+        let mv = Move::capture(Square::E4, Square::D5);
 
         let before = board.clone();
         let hash_before = board.zobrist_hash();
 
         let undo = board.do_move(mv).unwrap();
-        board.undo_move(undo);
+        unsafe { board.undo_move(undo) };
 
         assert_eq!(board, before);
         assert_eq!(board.zobrist_hash(), hash_before);
@@ -862,15 +876,10 @@ mod tests {
         let before = board.clone();
 
         let undo = board
-            .do_move(Move::cap_prom(
-                Square::B7,
-                Square::A8,
-                Role::Rook,
-                Role::Queen,
-            ))
+            .do_move(Move::promotion(Square::B7, Square::A8, Role::Queen, true))
             .unwrap();
 
-        board.undo_move(undo);
+        unsafe { board.undo_move(undo) };
 
         assert_eq!(board, before);
     }
@@ -888,9 +897,11 @@ mod tests {
 
         let before = board.clone();
 
-        let undo = board.do_move(Move::castling(CastlingSide::WShort)).unwrap();
+        let undo = board
+            .do_move(Move::king_castle(Square::E1, Square::G1))
+            .unwrap();
 
-        board.undo_move(undo);
+        unsafe { board.undo_move(undo) };
 
         assert_eq!(board, before);
     }
@@ -907,13 +918,10 @@ mod tests {
         let before = board.clone();
 
         let undo = board
-            .do_move(Move::EnPassant {
-                from: Square::E5,
-                to: Square::D6,
-            })
+            .do_move(Move::en_passant(Square::E5, Square::D6))
             .unwrap();
 
-        board.undo_move(undo);
+        unsafe { board.undo_move(undo) };
 
         assert_eq!(board, before);
     }
@@ -926,9 +934,9 @@ mod tests {
         let initial_hash = board.zobrist_hash();
 
         let moves = [
-            Move::quiet(Role::Pawn, Square::E2, Square::E4),
-            Move::quiet(Role::Pawn, Square::E7, Square::E5),
-            Move::quiet(Role::Knight, Square::G1, Square::F3),
+            Move::quiet(Square::E2, Square::E4),
+            Move::quiet(Square::E7, Square::E5),
+            Move::quiet(Square::G1, Square::F3),
         ];
 
         let mut undo_stack = vec![];
@@ -939,7 +947,7 @@ mod tests {
         }
 
         for _ in 0..3 {
-            board.undo_move(undo_stack.pop().unwrap());
+            unsafe { board.undo_move(undo_stack.pop().unwrap()) };
         }
 
         assert_eq!(board.zobrist_hash(), initial_hash);
@@ -953,13 +961,11 @@ mod tests {
         let before = board.clone();
         let start_turn = board.turn();
 
-        let undo = board
-            .do_move(Move::quiet(Role::Pawn, Square::E2, Square::E4))
-            .unwrap();
+        let undo = board.do_move(Move::quiet(Square::E2, Square::E4)).unwrap();
 
         assert_ne!(board.turn(), start_turn);
 
-        board.undo_move(undo);
+        unsafe { board.undo_move(undo) };
         assert_eq!(board.turn(), start_turn);
         assert_eq!(board, before);
     }
@@ -976,7 +982,7 @@ mod tests {
             let prev_hash = board.zobrist_hash();
 
             let undo = board.do_move(*mv).unwrap();
-            board.undo_move(undo);
+            unsafe { board.undo_move(undo) };
 
             assert_eq!(board.zobrist_hash(), prev_hash);
         }

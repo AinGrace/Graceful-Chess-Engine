@@ -43,6 +43,13 @@ impl Square {
         unsafe { transmute(index as u8) }
     }
 
+    // SAFETY: index should be < 64
+    #[rustfmt::skip]
+    #[inline(always)]
+    pub const unsafe fn from_u32_unchecked(index: u32) -> Self {
+        unsafe { transmute(index as u8) }
+    }
+
     #[inline(always)]
     pub fn offset(self, by: i32) -> Option<Self> {
         let idx = self as i32 + by;

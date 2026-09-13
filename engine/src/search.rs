@@ -288,13 +288,14 @@ fn negamax(
 
     let mut result = NegamaxResult::new(Score::Mate(0), None, *nodes);
 
-    let mut scored_moves = mvv_lva::score_moves(moves, tt_move);
+    let mut scored_moves = mvv_lva::score_moves(pos.board(), moves, tt_move);
 
     for i in 0..scored_moves.len() {
         mvv_lva::bubble_high_scored_move(&mut scored_moves, i);
         let current_move = scored_moves[i].0;
 
-        let undo = pos.do_move_inner(current_move);
+        //SAFETY: current_move is part of legal MoveList
+        let undo = unsafe { pos.do_move_unchecked(current_move) };
 
         *nodes += 1;
 
@@ -309,7 +310,8 @@ fn negamax(
             nodes,
         );
 
-        pos.undo_move(undo);
+        // SAFETY: undo is product of the previous do_move_uncheced call
+        unsafe { pos.undo_move(undo) };
 
         if matches!(search_result.score, Score::Abort) {
             return search_result;
@@ -422,7 +424,7 @@ fn quiesce(
     };
 
     let mut best_move = None;
-    let mut scored_moves = mvv_lva::score_moves(moves, tt_move);
+    let mut scored_moves = mvv_lva::score_moves(pos.board(), moves, tt_move);
 
     for i in 0..scored_moves.len() {
         mvv_lva::bubble_high_scored_move(&mut scored_moves, i);
@@ -447,12 +449,14 @@ fn quiesce(
             }
         }
 
-        let undo = pos.do_move_inner(current_move);
+        //SAFETY: current_move is part of legal MoveList
+        let undo = unsafe { pos.do_move_unchecked(current_move) };
         *nodes += 1;
 
         let search_result = quiesce(pos, tt_opts, -beta, -alpha, stop_flag, time_control, nodes);
 
-        pos.undo_move(undo);
+        //SAFETY: undo is the product of do_move_unchecked call above
+        unsafe { pos.undo_move(undo) };
 
         if matches!(search_result.score, Score::Abort) {
             return search_result;

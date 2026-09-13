@@ -1,11 +1,9 @@
-use std::fs::File;
 use std::fs::OpenOptions;
 use std::io::BufRead;
 use std::io::StdinLock;
 use std::io::Write;
 use std::io::stdin;
 use std::io::stdout;
-use std::path::Component::CurDir;
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -180,7 +178,8 @@ impl<W: Write + Send, R: BufRead> Uci<W, R> {
 
                 if let Some(moves) = items {
                     moves.iter().for_each(|mv| {
-                        pos.do_move_inner(*mv);
+                        // SAFETY: mv is quaranteed to be valid
+                        unsafe { pos.do_move_unchecked(*mv) };
                     });
                 }
                 self.engine.new_position(pos);
@@ -191,7 +190,8 @@ impl<W: Write + Send, R: BufRead> Uci<W, R> {
 
                 if let Some(moves) = items {
                     moves.iter().for_each(|mv| {
-                        pos.do_move_inner(*mv);
+                        // SAFETY: same as above 
+                        unsafe { pos.do_move_unchecked(*mv) };
                     });
                 }
 

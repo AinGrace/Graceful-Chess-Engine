@@ -1,3 +1,4 @@
+use position::board::Board;
 use types::{MoveList, ScoredMoveList, chess_move::Move, role::Role};
 
 // usage: [victim][attacker]
@@ -15,19 +16,20 @@ const MVV_LVA_TABLE: [[u8; Role::VARIANTS + 1]; Role::VARIANTS + 1] = [
 const NONE_IDX: usize = 6;
 const TT_MOVE_SCORE: u8 = u8::MAX;
 
-pub fn score_moves(moves: MoveList, tt_move: Option<Move>) -> ScoredMoveList {
+pub fn score_moves(board: &Board, moves: MoveList, tt_move: Option<Move>) -> ScoredMoveList {
     moves
         .iter()
         .map(|mv| {
             let score;
+            let moving_piece_role = unsafe { board.peek_role_unchecked(mv.from()) };
             if Some(*mv) == tt_move {
                 score = TT_MOVE_SCORE;
-            } else if let Some(captured_role) = mv.captured_role() {
-                score = MVV_LVA_TABLE[captured_role.as_usize()][mv.role().as_usize()];
+            } else if mv.is_capture() {
+                let captured_role = unsafe { board.peek_role_unchecked(mv.to()) };
+                score = MVV_LVA_TABLE[captured_role.as_usize()][moving_piece_role.as_usize()];
             } else {
-                score = MVV_LVA_TABLE[NONE_IDX][mv.role().as_usize()];
+                score = MVV_LVA_TABLE[NONE_IDX][moving_piece_role.as_usize()];
             }
-
             (*mv, score)
         })
         .collect()

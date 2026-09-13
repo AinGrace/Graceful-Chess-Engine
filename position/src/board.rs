@@ -79,9 +79,41 @@ impl Board {
     }
 
     #[inline(always)]
+    pub fn w_pawns(&self) -> Bitboard {
+        let pawns = *self.by_role.pawns();
+        let color_mask = *self.by_color.whites();
+
+        pawns & color_mask
+    }
+
+    #[inline(always)]
+    pub fn b_pawns(&self) -> Bitboard {
+        let pawns = *self.by_role.pawns();
+        let color_mask = *self.by_color.blacks();
+
+        pawns & color_mask
+    }
+
+    #[inline(always)]
     pub fn knights(&self, color: Color) -> Bitboard {
         let knights = *self.by_role.knights();
         let color_mask = *self.by_color.get(color);
+
+        knights & color_mask
+    }
+
+    #[inline(always)]
+    pub fn w_knights(&self) -> Bitboard {
+        let knights = *self.by_role.knights();
+        let color_mask = *self.by_color.whites();
+
+        knights & color_mask
+    }
+
+    #[inline(always)]
+    pub fn b_knights(&self) -> Bitboard {
+        let knights = *self.by_role.knights();
+        let color_mask = *self.by_color.blacks();
 
         knights & color_mask
     }
@@ -95,6 +127,22 @@ impl Board {
     }
 
     #[inline(always)]
+    pub fn w_bishops(&self) -> Bitboard {
+        let bishops = *self.by_role.bishops();
+        let color_mask = *self.by_color.whites();
+
+        bishops & color_mask
+    }
+
+    #[inline(always)]
+    pub fn b_bishops(&self) -> Bitboard {
+        let bishops = *self.by_role.bishops();
+        let color_mask = *self.by_color.blacks();
+
+        bishops & color_mask
+    }
+
+    #[inline(always)]
     pub fn rooks(&self, color: Color) -> Bitboard {
         let rooks = *self.by_role.rooks();
         let color_mask = *self.by_color.get(color);
@@ -103,9 +151,41 @@ impl Board {
     }
 
     #[inline(always)]
+    pub fn w_rooks(&self) -> Bitboard {
+        let rooks = *self.by_role.rooks();
+        let color_mask = *self.by_color.whites();
+
+        rooks & color_mask
+    }
+
+    #[inline(always)]
+    pub fn b_rooks(&self) -> Bitboard {
+        let rooks = *self.by_role.rooks();
+        let color_mask = *self.by_color.blacks();
+
+        rooks & color_mask
+    }
+
+    #[inline(always)]
     pub fn queens(&self, color: Color) -> Bitboard {
         let queens = *self.by_role.queens();
         let color_mask = *self.by_color.get(color);
+
+        queens & color_mask
+    }
+
+    #[inline(always)]
+    pub fn w_queens(&self) -> Bitboard {
+        let queens = *self.by_role.queens();
+        let color_mask = *self.by_color.whites();
+
+        queens & color_mask
+    }
+
+    #[inline(always)]
+    pub fn b_queens(&self) -> Bitboard {
+        let queens = *self.by_role.queens();
+        let color_mask = *self.by_color.blacks();
 
         queens & color_mask
     }
@@ -162,6 +242,15 @@ impl Board {
         Piece::of(role, color)
     }
 
+    /// safety preconditions are same as those on ByColor::peek_role_unchecked
+    #[inline(always)]
+    pub unsafe fn peek_unchecked(&self, square: Square) -> Piece {
+        let role = unsafe { self.by_role.peek_role_unchecked(square) };
+        let color = unsafe { self.by_color.peek_color_unchecked(square) };
+
+        Piece::of(role, color)
+    }
+
     #[inline(always)]
     pub fn peek_role(&self, square: Square) -> Option<Role> {
         self.by_role.peek_role(square)
@@ -170,6 +259,12 @@ impl Board {
     #[inline(always)]
     pub fn peek_role_checked(&self, square: Square) -> Role {
         self.by_role.peek_role_checked(square)
+    }
+
+    /// SAFETY: safety requirements are the same as of the underlying ByRole::peek_role_unchecked
+    #[inline(always)]
+    pub unsafe fn peek_role_unchecked(&self, square: Square) -> Role {
+        unsafe { self.by_role.peek_role_unchecked(square) }
     }
 
     #[inline(always)]
@@ -334,6 +429,21 @@ impl Board {
     #[inline(always)]
     pub fn take_piece_at_checked(&mut self, square: Square) -> Piece {
         let piece = self.peek_checked(square);
+
+        let role_bb = self.by_role.get_mut(piece.role());
+        let color_bb = self.by_color.get_mut(piece.color());
+
+        *role_bb = role_bb.clear_square(square);
+        *color_bb = color_bb.clear_square(square);
+
+        piece
+    }
+
+    /// SAFETY: safety requirements are same of the underlying ByRole or ByColor
+    #[must_use]
+    #[inline(always)]
+    pub unsafe fn take_piece_at_unchecked(&mut self, square: Square) -> Piece {
+        let piece = unsafe { self.peek_unchecked(square) };
 
         let role_bb = self.by_role.get_mut(piece.role());
         let color_bb = self.by_color.get_mut(piece.color());
