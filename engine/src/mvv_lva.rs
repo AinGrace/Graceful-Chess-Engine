@@ -1,5 +1,5 @@
 use position::board::Board;
-use types::{MoveList, ScoredMoveList, chess_move::Move, role::Role};
+use types::{MoveList, ScoredMoveList, chess_move::{Move, MoveFlag}, role::Role};
 
 // usage: [victim][attacker]
 #[rustfmt::skip]
@@ -25,7 +25,11 @@ pub fn score_moves(board: &Board, moves: MoveList, tt_move: Option<Move>) -> Sco
             if Some(*mv) == tt_move {
                 score = TT_MOVE_SCORE;
             } else if mv.is_capture() {
-                let captured_role = unsafe { board.peek_role_unchecked(mv.to()) };
+                let captured_role = if matches!(mv.flag(), MoveFlag::EnPassant) {
+                    Role::Pawn
+                } else {
+                    unsafe { board.peek_role_unchecked(mv.to()) }
+                };
                 score = MVV_LVA_TABLE[captured_role.as_usize()][moving_piece_role.as_usize()];
             } else {
                 score = MVV_LVA_TABLE[NONE_IDX][moving_piece_role.as_usize()];

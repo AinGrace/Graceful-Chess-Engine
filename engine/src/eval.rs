@@ -290,7 +290,7 @@ pub fn eval_see(board: &mut Board, dest: Square, us: Color) -> i16 {
 
         let opponent_gain = eval_see(board, dest, !us);
 
-        eval = i16::max(0, defender_value(defender) - opponent_gain);
+        eval = defender_value(defender) - opponent_gain;
 
         let attacker = board.take_piece_at_checked(dest);
         board.set_piece_at(attacker, attk);

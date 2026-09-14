@@ -170,7 +170,7 @@ where
 
         f(&result);
 
-        if curr_depth >= 3 && time_control.soft_limit != Duration::MAX {
+        if curr_depth >= 5 && time_control.soft_limit != Duration::MAX {
             let mut total_time = time_control.elapsed_from_start().as_millis() as u64;
             if total_time == 0 {
                 total_time = 1;
@@ -180,21 +180,27 @@ where
 
             let total_nodes: u64 = depths.iter().map(|d| d.nodes).sum();
 
-            const DEPTH_PREDICTION_WINDOW: usize = 4;
-            let depth_len = depths.len();
+            if total_nodes > 0 {
+                const DEPTH_PREDICTION_WINDOW: usize = 4;
+                let depth_len = depths.len();
 
-            for i in depth_len - DEPTH_PREDICTION_WINDOW..depth_len - 1 {
-                let d_nodes = depths[i + 1].nodes;
-                let prev_d_nodes = depths[i].nodes;
+                for i in depth_len - DEPTH_PREDICTION_WINDOW..depth_len - 1 {
+                    let d_nodes = depths[i + 1].nodes;
+                    let prev_d_nodes = depths[i].nodes;
 
-                branching_factor += d_nodes.div(prev_d_nodes) as f64;
+                    if prev_d_nodes == 0 {
+                        break;
+                    }
+
+                    branching_factor += d_nodes.div(prev_d_nodes) as f64;
+                }
+
+                // Exclude zero nodes/time depth from calculations
+                branching_factor = branching_factor / depths.len() as f64;
+
+                let next_predicted_nodes = (result.nodes as f64 * branching_factor) as u64;
+                next_predicted_time = (next_predicted_nodes * total_time) / total_nodes;
             }
-
-            // Exclude zero nodes/time depth from calculations
-            branching_factor = branching_factor / depths.len() as f64;
-
-            let next_predicted_nodes = (result.nodes as f64 * branching_factor) as u64;
-            next_predicted_time = (next_predicted_nodes * total_time) / total_nodes;
         }
 
         if matches!(result.score, Score::Mate(_)) {
@@ -249,8 +255,12 @@ fn negamax(
 
     let mut bound = Bound::Upper;
 
+    // if depth == 0 {
+    //     return NegamaxResult::new(eval::static_eval(pos), None, *nodes);
+    // }
+
     if depth == 0 {
-        return NegamaxResult::new(eval::static_eval(pos), None, *nodes);
+        return quiesce(pos, 7, tt_opts, alpha, beta, stop_flag, time_control, nodes);
     }
 
     let mut tt_move = None;
@@ -349,6 +359,7 @@ fn negamax(
 
 fn quiesce(
     pos: &mut Position,
+    depth: u8,
     tt_opts: &TTOptions,
     mut alpha: Score,
     mut beta: Score,
@@ -367,36 +378,29 @@ fn quiesce(
         return NegamaxResult::new_abort(*nodes);
     }
 
-    let mut bound = Bound::Upper;
-    let mut tt_move = None;
-
-    match tt_opts {
-        TTOptions::Enabled(tt) => {
-            let tt = tt.lock();
-
-            // TODO: explanation comments
-            if let Some(entry) = tt.get(pos.zobrist_hash(), 0)
-                && entry.hash == pos.zobrist_hash()
-            {
-                tt_move = entry.best_move;
-
-                match entry.bound {
-                    Bound::Exact => {
-                        return NegamaxResult::new(entry.score, tt_move, *nodes);
-                    }
-                    Bound::Lower => alpha = max(alpha, entry.score),
-                    Bound::Upper => beta = min(beta, entry.score),
-                }
-
-                if alpha > beta {
-                    return NegamaxResult::new(entry.score, tt_move, *nodes);
-                }
-            }
-        }
-        TTOptions::Disabled => (),
+    if depth == 0 {
+        return NegamaxResult::new(eval::static_eval(pos), None, *nodes);
     }
 
-    let in_check = pos.in_check();
+    let mut tt_move = None;
+
+    if let Some(entry) = tt_opts.probe(pos.zobrist_hash(), 0) {
+        tt_move = entry.best_move;
+
+        match entry.bound {
+            Bound::Exact => {
+                return NegamaxResult::new(entry.score, tt_move, *nodes);
+            }
+            Bound::Lower => alpha = max(alpha, entry.score),
+            Bound::Upper => beta = min(beta, entry.score),
+        }
+
+        if alpha > beta {
+            return NegamaxResult::new(entry.score, tt_move, *nodes);
+        }
+    }
+
+    let in_check = if depth == 7 { pos.in_check() } else { false };
 
     let mut best_score = if in_check {
         Score::Mate(0)
@@ -410,7 +414,6 @@ fn quiesce(
 
         if stand_pat > alpha {
             alpha = stand_pat;
-            bound = Bound::Exact;
         }
 
         stand_pat
@@ -419,8 +422,7 @@ fn quiesce(
     let moves = if in_check {
         pos.legal_moves()
     } else {
-        // TODO: movegen for captures
-        todo!()
+        pos.legal_captures()
     };
 
     let mut best_move = None;
@@ -453,7 +455,16 @@ fn quiesce(
         let undo = unsafe { pos.do_move_unchecked(current_move) };
         *nodes += 1;
 
-        let search_result = quiesce(pos, tt_opts, -beta, -alpha, stop_flag, time_control, nodes);
+        let search_result = quiesce(
+            pos,
+            depth - 1,
+            tt_opts,
+            -beta,
+            -alpha,
+            stop_flag,
+            time_control,
+            nodes,
+        );
 
         //SAFETY: undo is the product of do_move_unchecked call above
         unsafe { pos.undo_move(undo) };
@@ -471,22 +482,76 @@ fn quiesce(
 
         if inverted_score_step > alpha {
             alpha = inverted_score_step;
-            bound = Bound::Exact;
         }
 
         if inverted_score_step > beta {
-            bound = Bound::Lower;
             break;
         }
     }
 
-    match tt_opts {
-        TTOptions::Enabled(tt) => {
-            let mut tt = tt.lock();
-            tt.insert(pos.zobrist_hash(), 0, best_score, best_move, bound);
-        }
-        TTOptions::Disabled => (),
+    return NegamaxResult::new(best_score, best_move, *nodes);
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{search, time_control};
+
+    use super::*;
+
+    #[test]
+    fn search_test() {
+        let mut pos = Position::new();
+        pos.uci_moves_checked(
+            "
+            e2e4 e7e5 b1c3 g8f6 g1f3 d7d6 d2d4 b8d7 c1g5
+            f8e7 f1b5 a7a6 g5f6 e7f6 b5d7 d8d7 c3d5 d7d8
+            d4e5 f6e5 d1b1 f7f6 h1f1 e8g8 h2h3 c8e6 d5b4
+            d8e8 g2g3 e8f7 f1h1 f7h5 f3e5 h5e5 c2c3 a8e8
+            b1d3 e5h5 g3g4 e6g4 b4d5 g4f3 d5f4 f3e4 f4h5
+            e4d3 e1d2 d3g6 h5f4 g6e4 h1e1 g8f7 c3c4 e8e5
+            c4c5 g7g5 f4d3 e4d3 d2d3 f8d8 c5d6 e5d5",
+        );
+
+        let fen = pos.to_fen();
+
+        println!("{fen}");
+
+        let stop_thinking = Arc::new(AtomicBool::default());
+
+        search::search(
+            SearchOptions {
+                pos: &mut pos,
+                search_depth: 7,
+                tt_opts: TTOptions::Disabled,
+                stop_thinking: &stop_thinking,
+                time_control: TimeControl::new_infinite(),
+            },
+            |r| (),
+        );
     }
 
-    return NegamaxResult::new(best_score, best_move, *nodes);
+    #[test]
+    fn self_play() {
+        let mut pos = Position::new();
+        let stop_thinking = Arc::new(AtomicBool::default());
+        let time_control = TimeControl::new_infinite();
+
+        loop {
+            let search_opts = SearchOptions {
+                pos: &mut pos,
+                search_depth: 7,
+                tt_opts: TTOptions::Disabled,
+                stop_thinking: &stop_thinking,
+                time_control: time_control.clone(),
+            };
+
+            let res = search(search_opts, |mv| ());
+
+            if let Some(mov) = res.best_move {
+                pos.do_move(mov).unwrap();
+            } else {
+                break;
+            }
+        }
+    }
 }

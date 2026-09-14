@@ -98,6 +98,7 @@ impl Bitboard {
     }
 
     #[inline(always)]
+    #[track_caller]
     pub const fn first_square_checked(self) -> Square {
         let steps = self.0.trailing_zeros();
         Square::from_u32_checked(steps)

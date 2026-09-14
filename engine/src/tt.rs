@@ -79,7 +79,7 @@ impl TT {
     pub fn get(&self, hash: u64, depth: u8) -> Option<&TTEntry> {
         if let Some(entry) = self.entries.get(self.index(hash))
             && entry.hash == hash
-            && entry.depth >= depth
+            && (entry.depth == 0 || entry.depth >= depth)
         {
             Some(entry)
         } else {
@@ -89,7 +89,7 @@ impl TT {
 
     pub fn insert(&mut self, hash: u64, depth: u8, score: Score, mv: Option<Move>, bound: Bound) {
         if let Some(entry) = self.get(hash, depth)
-            && entry.depth > depth
+            && (entry.depth != 0 || entry.depth > depth)
         {
             return;
         }

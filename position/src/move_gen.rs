@@ -526,10 +526,16 @@ fn gen_white_evasion_moves<const CAPTURES_ONLY: bool>(
             // b_pins already covers "would leave king in check via diagonal"
             let candidates = board.w_pawns() & !r_pins; // rook-pinned pawns can't capture at all
 
-            let left_from = ep_square.offset_checked(-9); // NorthWest capture source
-            let right_from = ep_square.offset_checked(-7); // NorthEast capture source
+            let ep_bb = Bitboard::from_square(ep_square);
+
+            let left_from = ep_bb.shift_dir(Direction::SouthWest).first_square();
+            let right_from = ep_bb.shift_dir(Direction::SouthEast).first_square();
 
             for maybe_from in [left_from, right_from] {
+                let Some(maybe_from) = maybe_from else {
+                    continue;
+                };
+
                 if !candidates.is_square_set(maybe_from) {
                     continue;
                 }
@@ -1294,10 +1300,16 @@ fn gen_black_evasion_moves<const CAPTURES_ONLY: bool>(
             // b_pins already covers "would leave king in check via diagonal"
             let candidates = board.b_pawns() & !r_pins; // rook-pinned pawns can't capture at all
 
-            let left_from = ep_square.offset_checked(-Direction::SouthWest.offset()); // NorthWest capture source
-            let right_from = ep_square.offset_checked(-Direction::SouthEast.offset()); // NorthEast capture source
+            let ep_bb = Bitboard::from_square(ep_square);
+
+            let left_from = ep_bb.shift_dir(Direction::NorthWest).first_square();
+            let right_from = ep_bb.shift_dir(Direction::NorthEast).first_square();
 
             for maybe_from in [left_from, right_from] {
+                let Some(maybe_from) = maybe_from else {
+                    continue;
+                };
+
                 if !candidates.is_square_set(maybe_from) {
                     continue;
                 }

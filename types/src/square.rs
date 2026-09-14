@@ -36,6 +36,7 @@ impl Square {
     /// Will panic if index is >= 64
     #[rustfmt::skip]
     #[inline(always)]
+    #[track_caller]
     pub const fn from_u32_checked(index: u32) -> Self {
         assert!(index < 64);
 

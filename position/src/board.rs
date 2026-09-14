@@ -218,8 +218,9 @@ impl Board {
 
     /// returns the UNIQUE king of specified side, panics otherwise
     #[inline(always)]
+    #[track_caller]
     pub fn the_king(&self, color: Color) -> Square {
-        self.king(color).first_square_checked()
+        unsafe { self.king(color).first_square_unchecked() }
     }
 
     #[inline(always)]
@@ -311,6 +312,7 @@ impl Board {
 
     /// SAFETY: safety requirements are the same as of the underlying ByRole::peek_role_unchecked
     #[inline(always)]
+    #[track_caller]
     pub unsafe fn peek_role_unchecked(&self, square: Square) -> Role {
         unsafe {
             self.mailbox

@@ -20,22 +20,6 @@ use types::{
 
 use crate::{board::Board, fen::Fen, move_gen, zobrist};
 
-pub enum GameResult {
-    White,
-    Black,
-    Draw,
-    Unknown,
-}
-
-impl GameResult {
-    fn new_winner(side: Color) -> Self {
-        match side {
-            Color::White => Self::White,
-            Color::Black => Self::Black,
-        }
-    }
-}
-
 #[derive(Debug)]
 pub struct InvalidMoveError {
     mv: String,
@@ -154,6 +138,7 @@ impl Position {
 
     /// Returns a bitboard of pieces giving check to the king
     #[inline(always)]
+    #[track_caller]
     pub fn checkers_to(&self, side: Color) -> Bitboard {
         let king = self.board.the_king(side);
         self.board.attacks_to(king, !side)
@@ -264,6 +249,19 @@ impl Position {
 
         //SAFETY: uci_move is checked to be a valid move
         unsafe { self.do_move_unchecked(uci_move) }
+    }
+
+    pub fn uci_moves_checked(&mut self, raw_uci_moves: &str) {
+        for raw_uci in raw_uci_moves.split_ascii_whitespace() {
+            let uci_move = self
+                .parse_uci(raw_uci)
+                .unwrap_or_else(|| panic!("invalid uci {raw_uci}"));
+
+            //SAFETY: uci_move is checked to be a valid move
+            unsafe {
+                self.do_move_unchecked(uci_move);
+            }
+        }
     }
 
     pub unsafe fn undo_move(&mut self, undo: Undo) {
