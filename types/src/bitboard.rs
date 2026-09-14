@@ -22,9 +22,11 @@ pub mod masks {
     pub static RANK_8: Bitboard = Bitboard::from_u64(0xFF00000000000000);
     pub static RANK_7: Bitboard = Bitboard::from_u64(0x00FF000000000000);
     pub static RANK_6: Bitboard = Bitboard::from_u64(0x0000FF0000000000);
-    pub static RANK_1: Bitboard = Bitboard::from_u64(0x00000000000000FF);
-    pub static RANK_2: Bitboard = Bitboard::from_u64(0x000000000000FF00);
+    pub static RANK_5: Bitboard = Bitboard::from_u64(0x000000FF00000000);
+    pub static RANK_4: Bitboard = Bitboard::from_u64(0x00000000FF000000);
     pub static RANK_3: Bitboard = Bitboard::from_u64(0x0000000000FF0000);
+    pub static RANK_2: Bitboard = Bitboard::from_u64(0x000000000000FF00);
+    pub static RANK_1: Bitboard = Bitboard::from_u64(0x00000000000000FF);
 
     pub static OUTER_LAYER: Bitboard = Bitboard::from_u64(RANK_8.as_u64() | RANK_1.as_u64() | !NOT_FILE_A | !NOT_FILE_H);
 }

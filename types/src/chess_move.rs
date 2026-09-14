@@ -2,7 +2,7 @@ use std::fmt::Debug;
 
 use crate::{role::Role, square::Square};
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Move(u16);
 
 const FROM_SHIFT: u16 = 0;

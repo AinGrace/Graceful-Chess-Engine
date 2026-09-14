@@ -4,7 +4,6 @@ use std::{
     hint::unreachable_unchecked,
     mem,
     num::NonZeroU32,
-    ptr::read,
 };
 
 use types::{
@@ -190,11 +189,19 @@ impl Position {
 
     /// Generate and return a list of legal moves for the curent position
     pub fn legal_moves(&self) -> MoveList {
-        move_gen::gen_legal_moves_for(self, self.turn())
+        move_gen::gen_legal_moves_for_v2::<false>(self, self.turn())
     }
 
     pub fn legal_moves_for(&self, us: Color) -> MoveList {
-        move_gen::gen_legal_moves_for(self, us)
+        move_gen::gen_legal_moves_for_v2::<false>(self, us)
+    }
+
+    pub fn legal_captures(&self) -> MoveList {
+        move_gen::gen_legal_moves_for_v2::<true>(self, self.turn())
+    }
+
+    pub fn legal_captures_for(&self, us: Color) -> MoveList {
+        move_gen::gen_legal_moves_for_v2::<true>(self, us)
     }
 
     #[inline(always)]

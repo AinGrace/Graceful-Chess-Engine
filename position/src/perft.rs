@@ -9,7 +9,7 @@ use crate::{fen::Fen, position::Position};
 #[test]
 #[ignore = "to be onvoked manually for debugging"]
 fn perft_comparing() {
-    let raw_fen = "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1";
+    let raw_fen = "r3k2r/p1pp1pb1/bn3np1/3Pq3/1p6/2N1Q2P/PPPBBP1P/R3K2R b KQkq - 1 3";
     let our_fen: Fen = raw_fen.parse().unwrap();
     let their_fen = TheirFen::from_ascii(raw_fen.as_bytes()).unwrap();
 
@@ -24,7 +24,7 @@ fn perft_comparing() {
             history: vec![],
         },
         other_chessboard,
-        6,
+        7,
     );
 
     println!("{res}");
@@ -33,32 +33,16 @@ fn perft_comparing() {
 #[test]
 #[ignore = "to be onvoked manually for debugging"]
 fn mismatch_test() {
-    let raw_fen = "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1";
+    let raw_fen = "r3k2r/p1pp1pb1/bn3np1/3Pq3/1p6/2N1Q2P/PPPBBP1P/R3K2R b KQkq - 1 3";
     let fen: Fen = raw_fen.parse().unwrap();
-    let mut chessboard: Position = fen.try_to_position().unwrap();
+    let chessboard: Position = fen.try_to_position().unwrap();
 
     dbg!(&chessboard);
 
-    chessboard
-        .do_move(Move::capture(Square::G2, Square::H3))
-        .unwrap();
-    println!("after g2h3: {:?}", &chessboard);
-    chessboard
-        .do_move(Move::capture(Square::E6, Square::D5))
-        .unwrap();
-    println!("after e6d5: {:?}", &chessboard);
-    chessboard
-        .do_move(Move::capture(Square::E4, Square::D5))
-        .unwrap();
-    println!("after e4d5: {:?}", &chessboard);
-    chessboard
-        .do_move(Move::capture(Square::B4, Square::C3))
-        .unwrap();
-    println!("after b4c3: {:?}", &chessboard);
-    chessboard
-        .do_move(Move::queen_castle(Square::E1, Square::C1))
-        .unwrap();
-    println!("after a2a4: {:?}", &chessboard);
+    println!("{:?}", chessboard.board().b_queens());
+
+    let moves = chessboard.legal_moves();
+    dbg!(moves);
 }
 
 #[test]
@@ -438,8 +422,16 @@ fn perft_comparing_inner(our: HistoryChessBoard, their: Chess, dep: u32) -> u64 
         return 1;
     }
 
-    let our_moves = our.legal_moves();
+    let our_moves = our.inner.legal_moves();
     let their_moves = their.legal_moves();
+
+    let our_captures = our.inner.legal_captures();
+
+    let their_captures: MoveList = their_moves
+        .iter()
+        .map(|mv| translate_move(*mv))
+        .filter(|mv| mv.is_capture())
+        .collect();
 
     let their_fen = TheirFen::from_position(&their, shakmaty::EnPassantMode::Always).to_string();
     let our_fen = our.inner.to_fen().to_string();
@@ -450,8 +442,8 @@ fn perft_comparing_inner(our: HistoryChessBoard, their: Chess, dep: u32) -> u64 
         let our_set: HashSet<Move> = HashSet::from_iter(our_moves.iter().copied());
         let their_set = HashSet::from_iter(their_moves.iter().map(|m| translate_move(*m)));
 
-        let differences: Vec<&Move> = our_set.symmetric_difference(&their_set).collect();
-        
+        let differences: Vec<&Move> = our_set.difference(&their_set).collect();
+
         println!("OUR board -> {:#?}", our.inner);
         println!("THEIR board -> {:#?}", their);
 
@@ -466,9 +458,6 @@ fn perft_comparing_inner(our: HistoryChessBoard, their: Chess, dep: u32) -> u64 
     }
 
     if our_moves.len() != their_moves.len() {
-        println!("our moves -> {:#?}", our_moves);
-        println!("their moves -> {:#?}", their_moves);
-
         println!("Move history -> {:#?}", our.history);
 
         println!("OUR board -> {:#?}", our.inner);
@@ -477,13 +466,49 @@ fn perft_comparing_inner(our: HistoryChessBoard, their: Chess, dep: u32) -> u64 
         let our_set: HashSet<Move> = HashSet::from_iter(our_moves.iter().copied());
         let their_set = HashSet::from_iter(their_moves.iter().map(|m| translate_move(*m)));
 
-        let differences: Vec<&Move> = our_set.symmetric_difference(&their_set).collect();
+        let mut our_vec: Vec<Move> = our_moves.iter().copied().collect();
+        let mut their_vec: Vec<Move> = their_moves.iter().map(|m| translate_move(*m)).collect();
+
+        our_vec.sort();
+        their_vec.sort();
+
+        println!("our moves -> {:#?}", our_vec);
+        println!("their moves -> {:#?}", their_vec);
+
+        let differences: Vec<&Move> = our_set.difference(&their_set).collect();
 
         println!("We generated -> {}", our_moves.len());
         println!("They generated -> {}", their_moves.len());
         println!("diff -> {differences:#?}");
 
         panic!("Move mismatch");
+    }
+
+    if our_captures.len() != their_captures.len() {
+        println!("Move history -> {:#?}", our.history);
+
+        println!("OUR board -> {:#?}", our.inner);
+        println!("our fen -> {}", our.inner.to_fen());
+
+        let our_set: HashSet<Move> = HashSet::from_iter(our_captures.iter().copied());
+        let their_set = HashSet::from_iter(their_captures.iter().copied());
+
+        let mut our_vec: MoveList = our_captures.clone();
+        let mut their_vec: MoveList = their_captures.clone();
+
+        our_vec.sort();
+        their_vec.sort();
+
+        println!("our moves -> {:#?}", our_vec);
+        println!("their moves -> {:#?}", their_vec);
+
+        let differences: Vec<&Move> = our_set.difference(&their_set).collect();
+
+        println!("We generated -> {}", our_moves.len());
+        println!("They generated -> {}", their_moves.len());
+        println!("diff -> {differences:#?}");
+
+        panic!("Capture mismatch");
     }
 
     their_moves
@@ -572,7 +597,7 @@ fn translate_move(their_move: TheirMove) -> Move {
             Square::from_u32_checked(from.to_u32()),
             Square::from_u32_checked(to.to_u32()),
         ),
-        TheirMove::Castle { king, rook } => match rook {
+        TheirMove::Castle { king: _, rook } => match rook {
             shakmaty::Square::A1 => Move::queen_castle(Square::E1, Square::C1),
             shakmaty::Square::H1 => Move::king_castle(Square::E1, Square::G1),
             shakmaty::Square::A8 => Move::queen_castle(Square::E8, Square::C8),

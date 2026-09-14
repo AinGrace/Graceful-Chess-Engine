@@ -231,6 +231,22 @@ impl Board {
     }
 
     #[inline(always)]
+    pub fn w_king(&self) -> Bitboard {
+        let kings = *self.by_role.kings();
+        let color_mask = self.by_color.whites();
+
+        kings & *color_mask
+    }
+    
+    #[inline(always)]
+    pub fn b_king(&self) -> Bitboard {
+        let kings = *self.by_role.kings();
+        let color_mask = self.by_color.blacks();
+
+        kings & *color_mask
+    }
+
+    #[inline(always)]
     pub fn non_king_pieces_of(&self, color: Color) -> Bitboard {
         let king_sqr = self.the_king(color);
         let our_pieces = self.by_color(color);
