@@ -1,8 +1,5 @@
 use std::{
-    error::Error,
-    fmt::{Debug, Display},
-    num::NonZeroU32,
-    str::FromStr,
+    error::Error, fmt::{Debug, Display}, num::{NonZeroU8, NonZeroU32}, str::FromStr,
 };
 
 use types::{
@@ -34,8 +31,8 @@ pub struct Fen {
     pub turn: Color,
     pub castlings: Castlings,
     pub ep_square: Option<Square>,
-    pub half_moves: u32,
-    pub full_moves: NonZeroU32,
+    pub half_moves: u8,
+    pub full_moves: NonZeroU8,
 }
 
 impl Fen {
@@ -180,7 +177,7 @@ fn parse_square(file: i32, rank: i32) -> Square {
 
 fn parse_positional_data(
     position_data: &str,
-) -> Result<(Color, Castlings, Option<Square>, u32, NonZeroU32), FenError> {
+) -> Result<(Color, Castlings, Option<Square>, u8, NonZeroU8), FenError> {
     let mut chunks = position_data.split_whitespace();
 
     let side_to_move = parse_side_to_move(&mut chunks)?;
@@ -253,7 +250,7 @@ fn parse_ep_square<'a>(
 
 fn parse_half_and_full_moves<'a>(
     chunks: &mut impl Iterator<Item = &'a str>,
-) -> Result<(u32, std::num::NonZero<u32>), FenError> {
+) -> Result<(u8, std::num::NonZero<u8>), FenError> {
     let fourth_chunk = chunks.next().ok_or(FenError("Missing half moves".into()))?;
 
     let half_moves = fourth_chunk

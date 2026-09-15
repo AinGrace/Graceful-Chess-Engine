@@ -3,7 +3,7 @@ use std::{
     fmt::{Debug, Display},
     hint::unreachable_unchecked,
     mem,
-    num::NonZeroU32,
+    num::NonZeroU8,
 };
 
 use types::{
@@ -18,7 +18,12 @@ use types::{
     square::Square,
 };
 
-use crate::{board::Board, fen::Fen, move_gen, zobrist};
+use crate::{
+    board::Board,
+    fen::Fen,
+    move_gen,
+    zobrist::{self, z_black_to_move, z_castling, z_ep, z_key},
+};
 
 #[derive(Debug)]
 pub struct InvalidMoveError {
@@ -70,22 +75,22 @@ impl Display for PositionError {
 pub struct Undo {
     m: Move,
     castlings: Castlings,
-    ep_square: Option<Square>,
-    half_moves: u32,
-    full_moves: NonZeroU32,
-    zobrist_hash: u64,
+    ep: Option<Square>,
+    half_moves: u8,
+    full_moves: NonZeroU8,
+    z_hash: u64,
     captured_piece: Option<Piece>,
 }
 
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone)]
 pub struct Position {
     board: Board,
     turn: Color,
     castlings: Castlings,
-    ep_square: Option<Square>,
-    half_moves: u32,
-    full_moves: NonZeroU32,
-    zobrist_hash: u64,
+    ep: Option<Square>,
+    half_moves: u8,
+    full_moves: NonZeroU8,
+    z_hash: u64,
 }
 
 impl Position {
@@ -95,14 +100,14 @@ impl Position {
             board: Board::new(),
             turn: Color::White,
             castlings: Castlings::new(),
-            ep_square: None,
+            ep: None,
             half_moves: 0,
-            full_moves: NonZeroU32::MIN,
-            zobrist_hash: 0, // temporary value
+            full_moves: NonZeroU8::MIN,
+            z_hash: 0, // temporary value
         };
 
         let z_hash = zobrist::compute_hash(&pos);
-        pos.zobrist_hash = z_hash;
+        pos.z_hash = z_hash;
         pos
     }
 
@@ -122,16 +127,16 @@ impl Position {
             board,
             castlings,
             turn,
-            ep_square,
+            ep: ep_square,
             half_moves,
             full_moves,
-            zobrist_hash: 0, //temporary value
+            z_hash: 0, //temporary value
         };
 
         pos.health_check()?;
 
         let z_hash = zobrist::compute_hash(&pos);
-        pos.zobrist_hash = z_hash;
+        pos.z_hash = z_hash;
 
         Ok(pos)
     }
@@ -156,20 +161,16 @@ impl Position {
         self.checkers_to(self.turn).empty() && self.legal_moves().is_empty()
     }
 
-    pub fn half_moves(&self) -> u32 {
+    pub fn half_moves(&self) -> u8 {
         self.half_moves
     }
 
-    pub fn full_moves(&self) -> u32 {
+    pub fn full_moves(&self) -> u8 {
         self.full_moves.get()
     }
 
     pub fn zobrist_hash(&self) -> u64 {
-        self.zobrist_hash
-    }
-
-    pub fn zobrist_hash_mut(&mut self) -> &mut u64 {
-        &mut self.zobrist_hash
+        self.z_hash
     }
 
     /// Generate and return a list of legal moves for the curent position
@@ -205,7 +206,7 @@ impl Position {
     }
 
     pub fn ep_square(&self) -> Option<Square> {
-        self.ep_square
+        self.ep
     }
 
     pub fn castling_rights(&self) -> &Castlings {
@@ -267,7 +268,6 @@ impl Position {
     pub unsafe fn undo_move(&mut self, undo: Undo) {
         self.turn = !self.turn;
 
-        let board = &mut self.board;
         let mv = undo.m;
         let from = mv.from();
         let to = mv.to();
@@ -283,29 +283,32 @@ impl Position {
                     _ => unsafe { unreachable_unchecked() },
                 };
 
-                // SAFETY: to is quaranteed to be valid
-                let king_piece = unsafe { board.take_piece_at_unchecked(to) };
-                let rook_piece = unsafe { board.take_piece_at_unchecked(rook_to) };
-
-                board.set_piece_at(king_piece, from);
-                board.set_piece_at(rook_piece, rook_from);
+                unsafe {
+                    let king_piece = self.remove_piece(to);
+                    let rook_piece = self.remove_piece(rook_to);
+                    self.set_piece(king_piece, from);
+                    self.set_piece(rook_piece, rook_from);
+                }
             }
             MoveFlag::EnPassant => {
                 // SAFETY: same as above
-                let our_pawn = unsafe { board.take_piece_at_unchecked(to) };
+                let our_pawn = unsafe { self.remove_piece(to) };
+
                 let enemy_pawn = if self.turn == Color::White {
                     Piece::BPawn
                 } else {
                     Piece::WPawn
                 };
 
-                board.set_piece_at(our_pawn, from);
-                board.set_piece_at(enemy_pawn, Square::of(to.file(), from.rank()));
+                unsafe {
+                    self.set_piece(our_pawn, from);
+                    self.set_piece(enemy_pawn, Square::of(to.file(), from.rank()));
+                }
             }
 
             rest => {
                 // SAFETY: to is quaranteed to be valid
-                let our_piece = unsafe { board.take_piece_at_unchecked(to) };
+                let our_piece = unsafe { self.remove_piece(to) };
 
                 if rest.is_promotion() {
                     let our_pawn = if self.turn == Color::White {
@@ -313,22 +316,28 @@ impl Position {
                     } else {
                         Piece::BPawn
                     };
-                    board.set_piece_at(our_pawn, from);
+                    unsafe {
+                        self.set_piece(our_pawn, from);
+                    }
                 } else {
-                    board.set_piece_at(our_piece, from);
+                    unsafe {
+                        self.set_piece(our_piece, from);
+                    }
                 }
 
                 if let Some(captured) = undo.captured_piece {
-                    board.set_piece_at(captured, to);
+                    unsafe {
+                        self.set_piece(captured, to);
+                    }
                 }
             }
         }
 
         self.castlings = undo.castlings;
-        self.ep_square = undo.ep_square;
+        self.ep = undo.ep;
         self.half_moves = undo.half_moves;
         self.full_moves = undo.full_moves;
-        self.zobrist_hash = undo.zobrist_hash;
+        self.z_hash = undo.z_hash;
     }
 
     /// parse uci string as ChessMove enum
@@ -344,29 +353,40 @@ impl Position {
         legal_moves.contains(&mv)
     }
 
+    unsafe fn set_piece(&mut self, piece: Piece, sqr: Square) {
+        self.z_hash ^= z_key(piece, sqr);
+        self.board.set_piece_at(piece, sqr);
+    }
+
+    unsafe fn remove_piece(&mut self, sqr: Square) -> Piece {
+        let piece = unsafe { self.board.take_piece_at_unchecked(sqr) };
+        self.z_hash ^= z_key(piece, sqr);
+
+        piece
+    }
+
     /// Calling this method without validity quarantees by the caller may corrupt the state of Position
     pub unsafe fn do_move_unchecked(&mut self, mv: Move) -> Undo {
         let mut undo = Undo {
             m: mv,
             castlings: self.castlings,
-            ep_square: self.ep_square(),
             half_moves: self.half_moves,
             full_moves: self.full_moves,
-            zobrist_hash: self.zobrist_hash,
+            z_hash: self.z_hash,
             captured_piece: None,
+            ep: self.ep_square(),
         };
 
         let us = self.turn;
-        let board = &mut self.board;
 
-        let old_ep = self.ep_square.take(); // remove the ep square
-        let old_castling = self.castlings;
+        if let Some(ep) = self.ep.take() {
+            self.z_hash ^= z_ep(ep);
+        }
 
         let from = mv.from();
         let to = mv.to();
 
-        let moving_piece = unsafe { board.peek_unchecked(from) };
-        let mut captured_role = None;
+        let moving_piece = unsafe { self.board.peek_unchecked(from) };
 
         match mv.flag() {
             MoveFlag::KingCastle | MoveFlag::QueenCastle => {
@@ -379,54 +399,76 @@ impl Position {
                     _ => unsafe { unreachable_unchecked() },
                 };
 
-                board.discard_piece_at(from);
-                board.discard_piece_at(rook_from);
+                let king_piece = Piece::of(Role::King, us);
+                let rook_piece = Piece::of(Role::Rook, us);
 
-                board.set_piece_at(Piece::of(Role::King, us), to);
-                board.set_piece_at(Piece::of(Role::Rook, us), rook_to);
+                unsafe { self.remove_piece(from) };
+                unsafe { self.set_piece(king_piece, to) };
 
+                unsafe { self.remove_piece(rook_from) };
+                unsafe { self.set_piece(rook_piece, rook_to) };
+
+                self.z_hash ^= z_castling(self.castlings);
                 self.castlings.remove_all_of(us);
+                self.z_hash ^= z_castling(self.castlings);
 
                 self.half_moves += 1;
             }
             MoveFlag::EnPassant => {
                 self.half_moves = 0;
-                let our_pawn = Piece::of(Role::Pawn, us);
                 let captured_sqr = Square::of(to.file(), from.rank());
 
-                board.discard_piece_at(captured_sqr);
-                board.discard_piece_at(from);
-                board.set_piece_at(our_pawn, to);
+                unsafe { self.remove_piece(from) };
+                unsafe { self.remove_piece(captured_sqr) };
+
+                unsafe {
+                    self.set_piece(moving_piece, to);
+                }
 
                 undo.captured_piece = Some(Piece::of(Role::Pawn, !us));
-                captured_role = Some(Role::Pawn);
             }
             rest => {
                 // set en_passaunt on pawn double push
                 if matches!(rest, MoveFlag::DoublePush) {
                     let ep = ((from as u8 + to as u8) >> 1) as u32;
-                    self.ep_square = Some(unsafe { Square::from_u32_unchecked(ep) });
+                    let ep_sqr = unsafe { Square::from_u32_unchecked(ep) };
+                    self.ep = Some(ep_sqr);
+                    self.z_hash ^= z_ep(ep_sqr);
                 }
 
-                board.discard_piece_at(from);
+                unsafe { self.remove_piece(from) };
 
                 if rest.is_capture() {
-                    let captured = unsafe { board.take_piece_at_unchecked(to) };
+                    let captured = unsafe { self.remove_piece(to) };
+                    undo.captured_piece = Some(captured);
 
                     if captured.role() == Role::Rook {
                         // change castling rights on capture
                         match (us, to) {
-                            (Color::Black, Square::H1) => self.castlings.remove_w_short(),
-                            (Color::White, Square::H8) => self.castlings.remove_b_short(),
-                            (Color::Black, Square::A1) => self.castlings.remove_w_long(),
-                            (Color::White, Square::A8) => self.castlings.remove_b_long(),
+                            (Color::Black, Square::H1) => {
+                                self.z_hash ^= z_castling(self.castlings);
+                                self.castlings.remove_w_short();
+                                self.z_hash ^= z_castling(self.castlings);
+                            }
+                            (Color::White, Square::H8) => {
+                                self.z_hash ^= z_castling(self.castlings);
+                                self.castlings.remove_b_short();
+                                self.z_hash ^= z_castling(self.castlings);
+                            }
+                            (Color::Black, Square::A1) => {
+                                self.z_hash ^= z_castling(self.castlings);
+                                self.castlings.remove_w_long();
+                                self.z_hash ^= z_castling(self.castlings);
+                            }
+                            (Color::White, Square::A8) => {
+                                self.z_hash ^= z_castling(self.castlings);
+                                self.castlings.remove_b_long();
+                                self.z_hash ^= z_castling(self.castlings);
+                            }
 
                             _rest => (),
                         }
                     }
-
-                    undo.captured_piece = Some(captured);
-                    captured_role = Some(captured.role());
                 }
 
                 // if promotion exists set it at destination square, otherwise set the moving piece
@@ -438,16 +480,40 @@ impl Position {
                     _ => moving_piece,
                 };
 
-                board.set_piece_at(piece, to);
+                unsafe { self.set_piece(piece, to) };
 
                 // change castling rights on quiet move
                 match (us, moving_piece.role(), from) {
-                    (Color::White, Role::King, Square::E1) => self.castlings.remove_white(),
-                    (Color::White, Role::Rook, Square::A1) => self.castlings.remove_w_long(),
-                    (Color::White, Role::Rook, Square::H1) => self.castlings.remove_w_short(),
-                    (Color::Black, Role::King, Square::E8) => self.castlings.remove_black(),
-                    (Color::Black, Role::Rook, Square::A8) => self.castlings.remove_b_long(),
-                    (Color::Black, Role::Rook, Square::H8) => self.castlings.remove_b_short(),
+                    (Color::White, Role::King, Square::E1) => {
+                        self.z_hash ^= z_castling(self.castlings);
+                        self.castlings.remove_white();
+                        self.z_hash ^= z_castling(self.castlings);
+                    }
+                    (Color::White, Role::Rook, Square::A1) => {
+                        self.z_hash ^= z_castling(self.castlings);
+                        self.castlings.remove_w_long();
+                        self.z_hash ^= z_castling(self.castlings);
+                    }
+                    (Color::White, Role::Rook, Square::H1) => {
+                        self.z_hash ^= z_castling(self.castlings);
+                        self.castlings.remove_w_short();
+                        self.z_hash ^= z_castling(self.castlings);
+                    }
+                    (Color::Black, Role::King, Square::E8) => {
+                        self.z_hash ^= z_castling(self.castlings);
+                        self.castlings.remove_black();
+                        self.z_hash ^= z_castling(self.castlings);
+                    }
+                    (Color::Black, Role::Rook, Square::A8) => {
+                        self.z_hash ^= z_castling(self.castlings);
+                        self.castlings.remove_b_long();
+                        self.z_hash ^= z_castling(self.castlings);
+                    }
+                    (Color::Black, Role::Rook, Square::H8) => {
+                        self.z_hash ^= z_castling(self.castlings);
+                        self.castlings.remove_b_short();
+                        self.z_hash ^= z_castling(self.castlings);
+                    }
 
                     _rest => (),
                 }
@@ -461,23 +527,12 @@ impl Position {
             }
         }
 
-        zobrist::update_hash(
-            &mut self.zobrist_hash,
-            moving_piece,
-            captured_role,
-            mv,
-            us,
-            old_ep,
-            old_castling,
-            self.ep_square,
-            self.castlings,
-        );
+        self.z_hash ^= z_black_to_move();
 
         // increment full_moves
         if us == Color::Black {
             self.full_moves = self.full_moves.saturating_add(1);
         }
-
         // change the playing side
         self.turn = !self.turn;
 
@@ -493,7 +548,7 @@ impl Position {
             board: self.board.clone(),
             turn: self.turn,
             castlings: self.castlings,
-            ep_square: self.ep_square,
+            ep_square: self.ep,
             half_moves: self.half_moves,
             full_moves: self.full_moves,
         }
@@ -527,7 +582,7 @@ impl Position {
             }
         }
 
-        if let Some(ep_sqr) = self.ep_square {
+        if let Some(ep_sqr) = self.ep {
             let (offset, expected_pawn) = match our {
                 Color::White => (-8, Piece::BPawn),
                 Color::Black => (8, Piece::WPawn),
@@ -583,9 +638,10 @@ impl Debug for Position {
             .field("board", &self.board)
             .field("turn", &self.turn)
             .field("castlings", &self.castlings)
-            .field("ep_square", &self.ep_square)
+            .field("ep_square", &self.ep)
             .field("half_moves", &self.half_moves)
             .field("full_moves", &self.full_moves)
+            .field("z_hash", &self.z_hash)
             .finish()
     }
 }
@@ -595,6 +651,40 @@ impl Default for Position {
         Self::new()
     }
 }
+
+impl PartialEq for Position {
+    fn eq(&self, other: &Self) -> bool {
+        let Position {
+            board,
+            turn,
+            castlings,
+            ep,
+            half_moves,
+            full_moves,
+            z_hash,
+        } = &*self;
+
+        let Position {
+            board: other_board,
+            turn: other_turn,
+            castlings: other_castlings,
+            ep: other_ep,
+            half_moves: other_half_moves,
+            full_moves: other_full_moves,
+            z_hash: other_z_hash,
+        } = other;
+
+        board == other_board
+            && turn == other_turn
+            && castlings == other_castlings
+            && ep == other_ep
+            && half_moves == other_half_moves
+            && full_moves == other_full_moves
+            && z_hash == other_z_hash
+    }
+}
+
+impl Eq for Position {}
 
 #[cfg(test)]
 mod tests {
@@ -608,8 +698,8 @@ mod tests {
         println!("{board:#?}");
 
         let moves = vec![
-            Move::quiet(Square::D2, Square::D4),
-            Move::quiet(Square::D7, Square::D5),
+            Move::double_push(Square::D2, Square::D4),
+            Move::double_push(Square::D7, Square::D5),
             Move::quiet(Square::G1, Square::F3),
             Move::quiet(Square::B8, Square::C6),
             Move::quiet(Square::B1, Square::C3),
@@ -635,7 +725,7 @@ mod tests {
             Move::quiet(Square::C3, Square::A4),
             Move::quiet(Square::F6, Square::H5),
             Move::quiet(Square::D1, Square::D2),
-            Move::quiet(Square::F7, Square::F5),
+            Move::double_push(Square::F7, Square::F5),
             Move::capture(Square::E4, Square::F5),
             Move::capture(Square::E6, Square::F5),
             Move::quiet(Square::F1, Square::E1),
@@ -662,7 +752,7 @@ mod tests {
             Move::quiet(Square::F6, Square::F7),
             Move::capture(Square::E5, Square::H8),
             Move::quiet(Square::F7, Square::G6),
-            Move::quiet(Square::G2, Square::G4),
+            Move::double_push(Square::G2, Square::G4),
             Move::quiet(Square::A7, Square::H7),
             Move::capture(Square::H8, Square::H7),
             Move::capture(Square::G6, Square::H7),
@@ -752,8 +842,8 @@ mod tests {
         let mut board = Position::new();
 
         let moves = vec![
-            Move::quiet(Square::D2, Square::D4),
-            Move::quiet(Square::D7, Square::D5),
+            Move::double_push(Square::D2, Square::D4),
+            Move::double_push(Square::D7, Square::D5),
             Move::quiet(Square::G1, Square::F3),
             Move::quiet(Square::B8, Square::C6),
             Move::quiet(Square::B1, Square::C3),
@@ -779,7 +869,7 @@ mod tests {
             Move::quiet(Square::C3, Square::A4),
             Move::quiet(Square::F6, Square::H5),
             Move::quiet(Square::D1, Square::D2),
-            Move::quiet(Square::F7, Square::F5),
+            Move::double_push(Square::F7, Square::F5),
             Move::capture(Square::E4, Square::F5),
             Move::capture(Square::E6, Square::F5),
             Move::quiet(Square::F1, Square::E1),
@@ -806,7 +896,7 @@ mod tests {
             Move::quiet(Square::F6, Square::F7),
             Move::capture(Square::E5, Square::H8),
             Move::quiet(Square::F7, Square::G6),
-            Move::quiet(Square::G2, Square::G4),
+            Move::double_push(Square::G2, Square::G4),
             Move::quiet(Square::A7, Square::H7),
             Move::capture(Square::H8, Square::H7),
             Move::capture(Square::G6, Square::H7),
@@ -822,7 +912,7 @@ mod tests {
             let updated_hash = board.zobrist_hash();
             let computed_hash = zobrist::compute_hash(&board);
 
-            assert_eq!(updated_hash, computed_hash);
+            assert_eq!(updated_hash, computed_hash, "prev move: {mv:?}");
         }
     }
 
@@ -833,7 +923,7 @@ mod tests {
         let initial_hash = board.zobrist_hash();
         let initial_fen = board.to_fen();
 
-        let mv = Move::quiet(Square::E2, Square::E4);
+        let mv = Move::double_push(Square::E2, Square::E4);
 
         let undo = board.do_move(mv).unwrap();
 
@@ -841,17 +931,22 @@ mod tests {
 
         unsafe { board.undo_move(undo) };
 
+        let board_after_undo = board.clone();
         assert_eq!(board.zobrist_hash(), initial_hash);
         assert_eq!(board.to_fen(), initial_fen);
+        assert_eq!(board_after_undo, board);
     }
 
     #[test]
     fn undo_capture_restores_piece() {
         let mut board = Position::new();
 
-        let _undo = board.do_move(Move::quiet(Square::E2, Square::E4)).unwrap();
-
-        let _undo = board.do_move(Move::quiet(Square::D7, Square::D5)).unwrap();
+        board
+            .do_move(Move::double_push(Square::E2, Square::E4))
+            .unwrap();
+        board
+            .do_move(Move::double_push(Square::D7, Square::D5))
+            .unwrap();
 
         let mv = Move::capture(Square::E4, Square::D5);
 
@@ -932,41 +1027,13 @@ mod tests {
     }
 
     #[test]
-    fn undo_multiple_moves_restores_starting_position() {
-        let mut board = Position::new();
-
-        let before = board.clone();
-        let initial_hash = board.zobrist_hash();
-
-        let moves = [
-            Move::quiet(Square::E2, Square::E4),
-            Move::quiet(Square::E7, Square::E5),
-            Move::quiet(Square::G1, Square::F3),
-        ];
-
-        let mut undo_stack = vec![];
-
-        for mv in moves {
-            let undo = board.do_move(mv).unwrap();
-            undo_stack.push(undo);
-        }
-
-        for _ in 0..3 {
-            unsafe { board.undo_move(undo_stack.pop().unwrap()) };
-        }
-
-        assert_eq!(board.zobrist_hash(), initial_hash);
-        assert_eq!(board, before);
-    }
-
-    #[test]
     fn undo_restores_turn_correctly() {
         let mut board = Position::new();
 
         let before = board.clone();
         let start_turn = board.turn();
 
-        let undo = board.do_move(Move::quiet(Square::E2, Square::E4)).unwrap();
+        let undo = board.do_move(Move::double_push(Square::E2, Square::E4)).unwrap();
 
         assert_ne!(board.turn(), start_turn);
 

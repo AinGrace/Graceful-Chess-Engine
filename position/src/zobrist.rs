@@ -6,7 +6,7 @@ use types::{
     color::Color,
     piece::Piece,
     role::Role,
-    square::Square,
+    square::{self, Square},
 };
 
 use crate::position::Position;
@@ -76,7 +76,7 @@ pub fn compute_hash(pos: &Position) -> u64 {
     hash ^= ZOBRIST.castlings[pos.castling_rights().as_usize()];
 
     if let Some(ep) = pos.ep_square() {
-        hash ^= ZOBRIST.ep[ep.file().to_usize()]
+        hash ^= ZOBRIST.ep[ep.file().to_usize()];
     }
 
     if pos.turn() == Color::Black {
@@ -100,7 +100,6 @@ pub fn update_hash(
     if let Some(ep) = old_ep {
         *hash ^= ZOBRIST.ep[ep.file().to_usize()];
     }
-    *hash ^= ZOBRIST.castlings[old_castling.as_usize()];
 
     let from = mv.from();
     let to = mv.to();
@@ -115,6 +114,9 @@ pub fn update_hash(
 
                 _ => unsafe { unreachable_unchecked() },
             };
+
+            *hash ^= ZOBRIST.castlings[old_castling.as_usize()];
+            *hash ^= ZOBRIST.castlings[new_castling.as_usize()];
             *hash ^= ZOBRIST.piece(moving_piece, from);
             *hash ^= ZOBRIST.piece(moving_piece, to);
             *hash ^= ZOBRIST.piece(moving_piece, rook_from);
@@ -156,6 +158,21 @@ pub fn update_hash(
         *hash ^= ZOBRIST.ep[ep.file().to_usize()];
     }
 
-    *hash ^= ZOBRIST.castlings[new_castling.as_usize()];
     *hash ^= ZOBRIST.black_to_move;
+}
+
+pub fn z_key(piece: Piece, sqr: Square) -> u64 {
+    ZOBRIST.piece(piece, sqr)
+}
+
+pub fn z_castling(castle: Castlings) -> u64 {
+    ZOBRIST.castlings[castle.as_usize()]
+}
+
+pub fn z_ep(ep: Square) -> u64 {
+    ZOBRIST.ep[ep.file().to_usize()]
+}
+
+pub fn z_black_to_move() -> u64 {
+    ZOBRIST.black_to_move
 }

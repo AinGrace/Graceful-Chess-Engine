@@ -111,7 +111,7 @@ fn perft_depth_6_equals_119_060_324() {
 #[test]
 fn perft_depth_7_equals_3_195_901_860() {
     let mut chessboard = Position::new();
-    let res = perft(&mut chessboard, 7);
+    let res = perft_make_unmake(&mut chessboard, 7);
     assert_eq!(res, 3195901860);
 }
 

@@ -283,6 +283,7 @@ impl Board {
 
     /// safety preconditions are same as those on ByColor::peek_role_unchecked
     #[inline(always)]
+    #[track_caller]
     pub unsafe fn peek_unchecked(&self, square: Square) -> Piece {
         unsafe {
             self.mailbox
@@ -445,40 +446,40 @@ impl Board {
     }
 
     #[inline(always)]
-    pub fn set_piece_at(&mut self, piece: Piece, square: Square) {
+    pub fn set_piece_at(&mut self, piece: Piece, sqr: Square) {
         let role_bb = self.by_role.get_mut(piece.role());
         let color_bb = self.by_color.get_mut(piece.color());
 
-        *role_bb = role_bb.set_square(square);
-        *color_bb = color_bb.set_square(square);
+        *role_bb = role_bb.set_square(sqr);
+        *color_bb = color_bb.set_square(sqr);
 
-        self.mailbox[square.as_usize()] = Some(piece);
+        self.mailbox[sqr.as_usize()] = Some(piece);
     }
 
     #[inline(always)]
-    pub fn discard_piece_at(&mut self, square: Square) {
-        if let Some(piece) = self.peek(square) {
+    pub fn discard_piece_at(&mut self, sqr: Square) {
+        if let Some(piece) = self.peek(sqr) {
             let role_bb = self.by_role.get_mut(piece.role());
             let color_bb = self.by_color.get_mut(piece.color());
 
-            *role_bb = role_bb.clear_square(square);
-            *color_bb = color_bb.clear_square(square);
+            *role_bb = role_bb.clear_square(sqr);
+            *color_bb = color_bb.clear_square(sqr);
 
-            self.mailbox[square.as_usize()] = None;
+            self.mailbox[sqr.as_usize()] = None;
         }
     }
 
     #[inline(always)]
-    pub fn discard_piece_at_checked(&mut self, square: Square) {
-        let piece = self.peek_checked(square);
+    pub fn discard_piece_at_checked(&mut self, sqr: Square) {
+        let piece = self.peek_checked(sqr);
 
         let role_bb = self.by_role.get_mut(piece.role());
         let color_bb = self.by_color.get_mut(piece.color());
 
-        *role_bb = role_bb.clear_square(square);
-        *color_bb = color_bb.clear_square(square);
+        *role_bb = role_bb.clear_square(sqr);
+        *color_bb = color_bb.clear_square(sqr);
 
-        self.mailbox[square.as_usize()] = None;
+        self.mailbox[sqr.as_usize()] = None;
     }
 
     #[must_use]

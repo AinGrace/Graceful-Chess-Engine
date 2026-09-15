@@ -302,7 +302,7 @@ fn negamax(
             nodes,
         );
 
-        // SAFETY: undo is product of the previous do_move_uncheced call
+        // SAFETY: undo is produced by 
         unsafe { pos.undo_move(undo) };
 
         if matches!(search_result.score, Score::Abort) {
@@ -432,7 +432,7 @@ fn quiesce(
                 continue;
             }
         }
-
+ 
         //SAFETY: current_move is part of legal MoveList
         let undo = unsafe { pos.do_move_unchecked(current_move) };
         *nodes += 1;

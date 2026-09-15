@@ -107,6 +107,7 @@ pub(crate) mod constants {
     ];
 }
 
+// TODO: compact this one
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Score {
     Centipawn(i16),
@@ -218,65 +219,9 @@ pub fn static_eval(pos: &Position) -> Score {
     }
 }
 
-pub struct EvalDetails {
-    is_checkmate: bool,
-    is_stalemate: bool,
-    mobility: i16,
-    material: i16,
-    pst: i16,
-    total: i16,
-}
 
-impl Display for EvalDetails {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "is_checkmate: {}", self.is_checkmate)?;
-        writeln!(f, "is_stalemate: {}", self.is_stalemate)?;
-        writeln!(f, "mobility: {}", self.mobility)?;
-        writeln!(f, "material: {}", self.material)?;
-        writeln!(f, "pst: {}", self.pst)?;
-        writeln!(f, "total: {}", self.total)
-    }
-}
 
-pub fn static_eval_debug(pos: &Position) -> EvalDetails {
-    let mut res = EvalDetails {
-        is_checkmate: false,
-        is_stalemate: false,
-        mobility: 0,
-        material: 0,
-        pst: 0,
-        total: 0,
-    };
-
-    if pos.is_checkmate() {
-        res.is_checkmate = true;
-        return res;
-    } else if pos.is_stalemate() {
-        res.is_stalemate = true;
-        return res;
-    }
-
-    let board = pos.board();
-    let mobility = mobility(pos);
-    let material = material_score(board);
-    let pst = calculate_pst_score(board);
-
-    let score = mobility + material + pst;
-
-    res.mobility = mobility;
-    res.material = material;
-    res.pst = pst;
-    res.total = score;
-
-    if pos.turn() == Color::White {
-        res.total = res.total;
-    } else {
-        res.total = -res.total;
-    }
-
-    res
-}
-
+// TODO
 pub fn eval_see(board: &mut Board, dest: Square, us: Color) -> i16 {
     let mut eval = 0;
 
@@ -382,60 +327,60 @@ fn calculate_pst_score(board: &Board) -> i16 {
     // ---- WHITE ----
     board
         .pawns(white)
-        .for_each(|pawn| score += calculate_piece_pst(&PAWN_PST, pawn, white));
+        .for_each(|pawn| score += piece_pst(&PAWN_PST, pawn, white));
 
     board
         .knights(white)
-        .for_each(|knight| score += calculate_piece_pst(&KNIGHT_PST, knight, white));
+        .for_each(|knight| score += piece_pst(&KNIGHT_PST, knight, white));
 
     board
         .bishops(white)
-        .for_each(|bishop| score += calculate_piece_pst(&BISHOP_PST, bishop, white));
+        .for_each(|bishop| score += piece_pst(&BISHOP_PST, bishop, white));
 
     board
         .rooks(white)
-        .for_each(|rook| score += calculate_piece_pst(&ROOK_PST, rook, white));
+        .for_each(|rook| score += piece_pst(&ROOK_PST, rook, white));
 
     board
         .queens(white)
-        .for_each(|queen| score += calculate_piece_pst(&QUEEN_PST, queen, white));
+        .for_each(|queen| score += piece_pst(&QUEEN_PST, queen, white));
 
     board.king(white).for_each(|king| {
         if is_endgame(board) {
-            score += calculate_piece_pst(&KING_END_GAME_PST, king, white);
+            score += piece_pst(&KING_END_GAME_PST, king, white);
             score += king_dist_eval(board, white);
         } else {
-            score += calculate_piece_pst(&KING_MIDDLE_GAME_PST, king, white);
+            score += piece_pst(&KING_MIDDLE_GAME_PST, king, white);
         }
     });
 
     // ---- BLACK ----
     board
         .pawns(black)
-        .for_each(|pawn| score += calculate_piece_pst(&PAWN_PST, pawn, black));
+        .for_each(|pawn| score += piece_pst(&PAWN_PST, pawn, black));
 
     board
         .knights(black)
-        .for_each(|knight| score += calculate_piece_pst(&KNIGHT_PST, knight, black));
+        .for_each(|knight| score += piece_pst(&KNIGHT_PST, knight, black));
 
     board
         .bishops(black)
-        .for_each(|bishop| score += calculate_piece_pst(&BISHOP_PST, bishop, black));
+        .for_each(|bishop| score += piece_pst(&BISHOP_PST, bishop, black));
 
     board
         .rooks(black)
-        .for_each(|rook| score += calculate_piece_pst(&ROOK_PST, rook, black));
+        .for_each(|rook| score += piece_pst(&ROOK_PST, rook, black));
 
     board
         .queens(black)
-        .for_each(|queen| score += calculate_piece_pst(&QUEEN_PST, queen, black));
+        .for_each(|queen| score += piece_pst(&QUEEN_PST, queen, black));
 
     board.king(black).for_each(|king| {
         if is_endgame(board) {
-            score += calculate_piece_pst(&KING_END_GAME_PST, king, white);
+            score += piece_pst(&KING_END_GAME_PST, king, white);
             score += king_dist_eval(board, black);
         } else {
-            score += calculate_piece_pst(&KING_MIDDLE_GAME_PST, king, white);
+            score += piece_pst(&KING_MIDDLE_GAME_PST, king, white);
         }
     });
 
@@ -466,7 +411,7 @@ fn king_dist_eval(board: &Board, us: Color) -> i16 {
     }
 }
 
-fn calculate_piece_pst(table: &[i16; 64], square: Square, side: Color) -> i16 {
+fn piece_pst(table: &[i16; 64], square: Square, side: Color) -> i16 {
     match side {
         Color::White => table[square.mirror_vertical().as_usize()],
         Color::Black => -table[square.as_usize()],

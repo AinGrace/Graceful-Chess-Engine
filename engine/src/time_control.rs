@@ -7,7 +7,7 @@ use std::{
 use position::position::Position;
 use types::color::Color;
 
-const AVG_MOVES_PER_GAME: u32 = 40;
+const AVG_MOVES_PER_GAME: u8 = 40;
 
 /// Buffer to account for IO overhead
 const LAG_BUFFER_MILLIS: u32 = 30;
@@ -46,7 +46,7 @@ impl TimeControl {
             Duration::from_millis((base + increment as u64) * 3 / 4)
         } else {
             let moves_until_the_end = AVG_MOVES_PER_GAME.saturating_sub(pos.full_moves()).max(5);
-            let base = (remaining_millis / moves_until_the_end) as u64;
+            let base = (remaining_millis / moves_until_the_end as u32) as u64;
             Duration::from_millis((base + increment as u64) * 3 / 4)
         };
 
