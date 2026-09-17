@@ -6,6 +6,7 @@ use std::{
     num::NonZeroU8,
 };
 
+use lookup::{PSQT, phase_weight};
 use types::{
     MoveList,
     bitboard::Bitboard,
@@ -90,6 +91,9 @@ pub struct Position {
     ep: Option<Square>,
     half_moves: u8,
     full_moves: NonZeroU8,
+    phase: u8,
+    mg_score: i16,
+    eg_score: i16,
     z_hash: u64,
 }
 
@@ -103,11 +107,44 @@ impl Position {
             ep: None,
             half_moves: 0,
             full_moves: NonZeroU8::MIN,
+            mg_score: 0,
+            eg_score: 0,
+            phase: 0,
             z_hash: 0, // temporary value
         };
 
+        let phase: u8 = pos
+            .board
+            .mailbox()
+            .iter()
+            .flatten()
+            .map(|p| phase_weight(p.role()))
+            .sum();
+
+        let mut mg_score = 0;
+        let mut eg_score = 0;
+
+        for i in 0..pos.board.mailbox().len() {
+            if let Some(piece) = pos.board.mailbox()[i] {
+                let sq = if piece.color() == Color::White {
+                    i
+                } else {
+                    i ^ 56 // mirror rank for Black
+                };
+
+                let sign = if piece.color() == Color::White { 1 } else { -1 };
+
+                mg_score += sign * PSQT.mg[piece.role().as_usize()][sq];
+                eg_score += sign * PSQT.eg[piece.role().as_usize()][sq];
+            }
+        }
+
         let z_hash = zobrist::compute_hash(&pos);
+
         pos.z_hash = z_hash;
+        pos.phase = phase;
+        pos.mg_score = mg_score;
+        pos.eg_score = eg_score;
         pos
     }
 
@@ -130,13 +167,45 @@ impl Position {
             ep: ep_square,
             half_moves,
             full_moves,
+            mg_score: 0,
+            eg_score: 0,
+            phase: 0,
             z_hash: 0, //temporary value
         };
 
         pos.health_check()?;
 
+        let phase: u8 = pos
+            .board
+            .mailbox()
+            .iter()
+            .flatten()
+            .map(|p| phase_weight(p.role()))
+            .sum();
+
+        let mut mg_score = 0;
+        let mut eg_score = 0;
+
+        for i in 0..pos.board.mailbox().len() {
+            if let Some(piece) = pos.board.mailbox()[i] {
+                let sq = if piece.color() == Color::White {
+                    i
+                } else {
+                    i ^ 56 // mirror rank for Black
+                };
+
+                let sign = if piece.color() == Color::White { 1 } else { -1 };
+
+                mg_score += sign * PSQT.mg[piece.role().as_usize()][sq];
+                eg_score += sign * PSQT.eg[piece.role().as_usize()][sq];
+            }
+        }
+
         let z_hash = zobrist::compute_hash(&pos);
         pos.z_hash = z_hash;
+        pos.mg_score = mg_score;
+        pos.eg_score = eg_score;
+        pos.phase = phase;
 
         Ok(pos)
     }
@@ -211,6 +280,11 @@ impl Position {
 
     pub fn castling_rights(&self) -> &Castlings {
         &self.castlings
+    }
+
+    pub fn tapered_score(&self) -> i16 {
+        let phase = self.phase.clamp(0, 24) as i16;
+        (self.mg_score * phase + self.eg_score * (24 - phase)) / 24
     }
 
     /// Checks move for legality and then executes it
@@ -354,13 +428,29 @@ impl Position {
     }
 
     unsafe fn set_piece(&mut self, piece: Piece, sqr: Square) {
-        self.z_hash ^= z_key(piece, sqr);
         self.board.set_piece_at(piece, sqr);
+        self.z_hash ^= z_key(piece, sqr);
+        let (sign, sqr) = match self.turn {
+            Color::White => (1, sqr.as_usize()),
+            Color::Black => (-1, sqr.as_usize() ^ 56),
+        };
+
+        self.mg_score += sign * PSQT.mg[piece.role().as_usize()][sqr];
+        self.eg_score += sign * PSQT.eg[piece.role().as_usize()][sqr];
+        self.phase -= phase_weight(piece.role());
     }
 
     unsafe fn remove_piece(&mut self, sqr: Square) -> Piece {
         let piece = unsafe { self.board.take_piece_at_unchecked(sqr) };
         self.z_hash ^= z_key(piece, sqr);
+        let (sign, sqr) = match self.turn {
+            Color::White => (1, sqr.as_usize()),
+            Color::Black => (-1, sqr.as_usize() ^ 56),
+        };
+
+        self.mg_score += sign * PSQT.mg[piece.role().as_usize()][sqr];
+        self.eg_score += sign * PSQT.eg[piece.role().as_usize()][sqr];
+        self.phase += phase_weight(piece.role());
 
         piece
     }
@@ -641,6 +731,9 @@ impl Debug for Position {
             .field("ep_square", &self.ep)
             .field("half_moves", &self.half_moves)
             .field("full_moves", &self.full_moves)
+            .field("mg_score", &self.mg_score)
+            .field("eg_score", &self.eg_score)
+            .field("phase", &self.phase)
             .field("z_hash", &self.z_hash)
             .finish()
     }
@@ -662,6 +755,9 @@ impl PartialEq for Position {
             half_moves,
             full_moves,
             z_hash,
+            phase,
+            mg_score,
+            eg_score,
         } = &*self;
 
         let Position {
@@ -672,6 +768,9 @@ impl PartialEq for Position {
             half_moves: other_half_moves,
             full_moves: other_full_moves,
             z_hash: other_z_hash,
+            phase: other_phase,
+            mg_score: other_mg_score,
+            eg_score: other_eg_score,
         } = other;
 
         board == other_board
@@ -681,6 +780,9 @@ impl PartialEq for Position {
             && half_moves == other_half_moves
             && full_moves == other_full_moves
             && z_hash == other_z_hash
+            && phase == other_phase
+            && mg_score == other_mg_score
+            && eg_score == other_eg_score
     }
 }
 
@@ -689,13 +791,23 @@ impl Eq for Position {}
 #[cfg(test)]
 mod tests {
 
-    use super::*;
+    use std::str::FromStr;
+
+use super::*;
     use rand::seq::IndexedRandom;
+
+    #[test]
+    fn score_test() {
+        let fen = Fen::from_str("rn2kbnr/ppp2ppp/6P1/4p3/7P/2N5/PPPP1P2/R1B1K2b w Qkq - 0 12").unwrap();
+        let mut pos = fen.try_to_position().unwrap();
+
+        dbg!(&pos);
+
+    }
 
     #[test]
     fn real_game_test() {
         let mut board = Position::new();
-        println!("{board:#?}");
 
         let moves = vec![
             Move::double_push(Square::D2, Square::D4),
@@ -762,6 +874,7 @@ mod tests {
             Move::quiet(Square::G6, Square::F6),
             Move::quiet(Square::E1, Square::E6),
         ];
+
 
         for mv in moves.into_iter() {
             let _undo = board.do_move(mv).unwrap();
@@ -1033,7 +1146,9 @@ mod tests {
         let before = board.clone();
         let start_turn = board.turn();
 
-        let undo = board.do_move(Move::double_push(Square::E2, Square::E4)).unwrap();
+        let undo = board
+            .do_move(Move::double_push(Square::E2, Square::E4))
+            .unwrap();
 
         assert_ne!(board.turn(), start_turn);
 

@@ -3,109 +3,11 @@ use std::{
     ops::{Neg, Sub},
 };
 
+use lookup::{
+    MG_BISHOP_PST, BISHOP_VALUE, EG_KING_PST, MG_KING_PST, KING_PENALTY_FACTOR, MG_KNIGHT_PST, KNIGHT_VALUE, MG_PAWN_PST, PAWN_VALUE, MG_QUEEN_PST, QUEEN_VALUE, MG_ROOK_PST, ROOK_VALUE, piece_val,
+};
 use position::{board::Board, position::Position};
 use types::{color::Color, piece::Piece, role::Role, square::Square};
-
-use crate::eval::constants::{
-    BISHOP_PST, BISHOP_VALUE, KING_END_GAME_PST, KING_MIDDLE_GAME_PST, KING_PENALTY_FACTOR,
-    KNIGHT_PST, KNIGHT_VALUE, PAWN_PST, PAWN_VALUE, QUEEN_PST, QUEEN_VALUE, ROOK_PST, ROOK_VALUE,
-};
-
-#[rustfmt::skip]
-pub(crate) mod constants {
-
-    /// assign 100 as default pawn value instead of 1 in order to avoid floating point calculations
-    pub const PAWN_VALUE    :   i16 = 100;
-    pub const KNIGHT_VALUE  :   i16 = 340;
-    pub const BISHOP_VALUE  :   i16 = 350;
-    pub const ROOK_VALUE    :   i16 = 500;
-    pub const QUEEN_VALUE   :   i16 = 900;
-
-    pub const KING_PENALTY_FACTOR : i16 = 70;
-
-    ///Piece-Square Tables (PSTs) are a simple evaluation technique that assigns a score to a piece depending on which square it occupies.
-    ///The idea is:
-    ///A knight in the center is usually stronger than a knight on the edge.
-    ///A pawn advanced to the 6th rank is often more valuable than one on the 2nd rank.
-    ///
-    ///These values are part of the evaluation score
-    pub const PAWN_PST: [i16; 64] = [
-        0,   0,  0,  0,  0,  0,  0,  0,
-        50, 50, 50, 50, 50, 50, 50, 50,
-        10, 10, 20, 30, 30, 20, 10, 10,
-         5,  5, 10, 25, 25, 10,  5,  5,
-         0,  0,  0, 20, 20,  0,  0,  0,
-         5, -5,-10,  0,  0,-10, -5,  5,
-         5, 10, 10,-20,-20, 10, 10,  5,
-         0,  0,  0,  0,  0,  0,  0,  0
-    ];
-
-    pub const KNIGHT_PST: [i16; 64] = [
-       -50,-40,-30,-30,-30,-30,-40,-50,
-       -40,-20,  0,  0,  0,  0,-20,-40,
-       -30,  0, 10, 15, 15, 10,  0,-30,
-       -30,  5, 15, 20, 20, 15,  5,-30,
-       -30,  0, 15, 20, 20, 15,  0,-30,
-       -30,  5, 10, 15, 15, 10,  5,-30,
-       -40,-20,  0,  5,  5,  0,-20,-40,
-       -50,-40,-30,-30,-30,-30,-40,-50,
-    ];
-
-    pub const BISHOP_PST: [i16; 64] = [
-       -20,-10,-10,-10,-10,-10,-10,-20,
-       -10,  0,  0,  0,  0,  0,  0,-10,
-       -10,  0,  5, 10, 10,  5,  0,-10,
-       -10,  5,  5, 10, 10,  5,  5,-10,
-       -10,  0, 10, 10, 10, 10,  0,-10,
-       -10, 10, 10, 10, 10, 10, 10,-10,
-       -10,  5,  0,  0,  0,  0,  5,-10,
-       -20,-10,-10,-10,-10,-10,-10,-20
-    ];
-
-    pub const ROOK_PST: [i16; 64] = [
-        0,  0,  0,  0,  0,  0,  0,  0,
-        5, 10, 10, 10, 10, 10, 10, -5,
-       -5,  0,  0,  0,  0,  0,  0, -5,
-       -5,  0,  0,  0,  0,  0,  0, -5,
-       -5,  0,  0,  0,  0,  0,  0, -5,
-       -5,  0,  0,  0,  0,  0,  0, -5,
-       -5,  0,  0,  0,  0,  0,  0, -5,
-        0,  0,  0,  5,  5,  0,  0,  0
-    ];
-
-    pub const QUEEN_PST: [i16; 64] = [
-        -20,-10,-10, -5, -5,-10,-10,-20,
-        -10,  0,  0,  0,  0,  0,  0,-10,
-        -10,  0,  5,  5,  5,  5,  0,-10,
-         -5,  0,  5,  5,  5,  5,  0, -5,
-          0,  0,  5,  5,  5,  5,  0, -5,
-        -10,  5,  5,  5,  5,  5,  0,-10,
-        -10,  0,  5,  0,  0,  0,  0,-10,
-        -20,-10,-10, -5, -5,-10,-10,-20
-    ];
-
-    pub const KING_MIDDLE_GAME_PST: [i16; 64] = [
-        -30,-40,-40,-50,-50,-40,-40,-30,
-        -30,-40,-40,-50,-50,-40,-40,-30,
-        -30,-40,-40,-50,-50,-40,-40,-30,
-        -30,-40,-40,-50,-50,-40,-40,-30,
-        -20,-30,-30,-40,-40,-30,-30,-20,
-        -10,-20,-20,-20,-20,-20,-20,-10,
-         20, 20,  0,  0,  0,  0, 20, 20,
-         20, 30, 10,  0,  0, 10, 30, 20
-    ];
-
-    pub const KING_END_GAME_PST: [i16; 64] = [
-        -50,-40,-30,-20,-20,-30,-40,-50,
-        -30,-20,-10,  0,  0,-10,-20,-30,
-        -30,-10, 20, 30, 30, 20,-10,-30,
-        -30,-10, 30, 40, 40, 30,-10,-30,
-        -30,-10, 30, 40, 40, 30,-10,-30,
-        -30,-10, 20, 30, 30, 20,-10,-30,
-        -30,-30,  0,  0,  0,  0,-30,-30,
-        -50,-30,-30,-30,-30,-30,-30,-50
-    ];
-}
 
 // TODO: compact this one
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -199,18 +101,16 @@ impl Default for Score {
 }
 
 pub fn static_eval(pos: &Position) -> Score {
-    if pos.is_checkmate() {
+        if pos.is_checkmate() {
         return Score::Mate(0);
     } else if pos.is_stalemate() {
         return Score::Draw;
     }
 
-    let board = pos.board();
     let mobility = mobility(pos);
-    let material = material_score(board);
-    let pst = calculate_pst_score(board);
+    let tapered_score = pos.tapered_score();
 
-    let score = mobility + material + pst;
+    let score = mobility + tapered_score;
 
     if pos.turn() == Color::White {
         Score::Centipawn(score)
@@ -218,8 +118,6 @@ pub fn static_eval(pos: &Position) -> Score {
         Score::Centipawn(-score)
     }
 }
-
-
 
 // TODO
 pub fn eval_see(board: &mut Board, dest: Square, us: Color) -> i16 {
@@ -235,7 +133,7 @@ pub fn eval_see(board: &mut Board, dest: Square, us: Color) -> i16 {
 
         let opponent_gain = eval_see(board, dest, !us);
 
-        eval = defender_value(defender) - opponent_gain;
+        eval = piece_val(defender) - opponent_gain;
 
         let attacker = board.take_piece_at_checked(dest);
         board.set_piece_at(attacker, attk);
@@ -243,17 +141,6 @@ pub fn eval_see(board: &mut Board, dest: Square, us: Color) -> i16 {
     }
 
     eval
-}
-
-fn defender_value(piece: Piece) -> i16 {
-    match piece.role() {
-        Role::Pawn => PAWN_VALUE,
-        Role::Knight => KNIGHT_VALUE,
-        Role::Bishop => BISHOP_VALUE,
-        Role::Rook => ROOK_VALUE,
-        Role::Queen => QUEEN_VALUE,
-        Role::King => i16::MAX,
-    }
 }
 
 fn mobility(pos: &Position) -> i16 {
@@ -327,60 +214,60 @@ fn calculate_pst_score(board: &Board) -> i16 {
     // ---- WHITE ----
     board
         .pawns(white)
-        .for_each(|pawn| score += piece_pst(&PAWN_PST, pawn, white));
+        .for_each(|pawn| score += piece_pst(&MG_PAWN_PST, pawn, white));
 
     board
         .knights(white)
-        .for_each(|knight| score += piece_pst(&KNIGHT_PST, knight, white));
+        .for_each(|knight| score += piece_pst(&MG_KNIGHT_PST, knight, white));
 
     board
         .bishops(white)
-        .for_each(|bishop| score += piece_pst(&BISHOP_PST, bishop, white));
+        .for_each(|bishop| score += piece_pst(&MG_BISHOP_PST, bishop, white));
 
     board
         .rooks(white)
-        .for_each(|rook| score += piece_pst(&ROOK_PST, rook, white));
+        .for_each(|rook| score += piece_pst(&MG_ROOK_PST, rook, white));
 
     board
         .queens(white)
-        .for_each(|queen| score += piece_pst(&QUEEN_PST, queen, white));
+        .for_each(|queen| score += piece_pst(&MG_QUEEN_PST, queen, white));
 
     board.king(white).for_each(|king| {
         if is_endgame(board) {
-            score += piece_pst(&KING_END_GAME_PST, king, white);
+            score += piece_pst(&EG_KING_PST, king, white);
             score += king_dist_eval(board, white);
         } else {
-            score += piece_pst(&KING_MIDDLE_GAME_PST, king, white);
+            score += piece_pst(&MG_KING_PST, king, white);
         }
     });
 
     // ---- BLACK ----
     board
         .pawns(black)
-        .for_each(|pawn| score += piece_pst(&PAWN_PST, pawn, black));
+        .for_each(|pawn| score += piece_pst(&MG_PAWN_PST, pawn, black));
 
     board
         .knights(black)
-        .for_each(|knight| score += piece_pst(&KNIGHT_PST, knight, black));
+        .for_each(|knight| score += piece_pst(&MG_KNIGHT_PST, knight, black));
 
     board
         .bishops(black)
-        .for_each(|bishop| score += piece_pst(&BISHOP_PST, bishop, black));
+        .for_each(|bishop| score += piece_pst(&MG_BISHOP_PST, bishop, black));
 
     board
         .rooks(black)
-        .for_each(|rook| score += piece_pst(&ROOK_PST, rook, black));
+        .for_each(|rook| score += piece_pst(&MG_ROOK_PST, rook, black));
 
     board
         .queens(black)
-        .for_each(|queen| score += piece_pst(&QUEEN_PST, queen, black));
+        .for_each(|queen| score += piece_pst(&MG_QUEEN_PST, queen, black));
 
     board.king(black).for_each(|king| {
         if is_endgame(board) {
-            score += piece_pst(&KING_END_GAME_PST, king, white);
+            score += piece_pst(&EG_KING_PST, king, white);
             score += king_dist_eval(board, black);
         } else {
-            score += piece_pst(&KING_MIDDLE_GAME_PST, king, white);
+            score += piece_pst(&MG_KING_PST, king, white);
         }
     });
 
@@ -431,13 +318,10 @@ mod tests {
     }
 
     mod see {
+        use lookup::{BISHOP_VALUE, KNIGHT_VALUE, PAWN_VALUE, QUEEN_VALUE, ROOK_VALUE};
         use types::{color::Color, square::Square};
 
-        use crate::eval::{
-            constants::{BISHOP_VALUE, KNIGHT_VALUE, PAWN_VALUE, QUEEN_VALUE, ROOK_VALUE},
-            eval_see,
-            tests::pos_from_fen,
-        };
+        use crate::eval::{eval_see, tests::pos_from_fen};
 
         fn see(fen: &str, dest: Square, them: Color) -> i16 {
             let pos = pos_from_fen(fen);

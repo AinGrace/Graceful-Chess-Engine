@@ -82,6 +82,11 @@ impl Board {
     }
 
     #[inline(always)]
+    pub fn mailbox(&self) -> &[Option<Piece>] {
+        &self.mailbox
+    }
+
+    #[inline(always)]
     pub fn whites(&self) -> Bitboard {
         *self.by_color.whites()
     }
@@ -238,7 +243,7 @@ impl Board {
 
         kings & *color_mask
     }
-    
+
     #[inline(always)]
     pub fn b_king(&self) -> Bitboard {
         let kings = *self.by_role.kings();
