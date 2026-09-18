@@ -8,10 +8,9 @@ use std::{
 
 use parking_lot::Mutex;
 use position::position::Position;
-use types::chess_move::Move;
+use types::{chess_move::Move, score::Score};
 
 use crate::{
-    eval::Score,
     search::{SearchOptions, SearchResult},
     stats::EngineStats,
     time_control::TimeControl,

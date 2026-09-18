@@ -9,10 +9,10 @@ use std::{
 };
 
 use position::position::Position;
-use types::chess_move::Move;
+use types::{chess_move::Move, score::Score};
 
 use crate::{
-    eval::{self, Score},
+    eval::{self},
     mvv_lva,
     time_control::TimeControl,
     tt::TTOptions,

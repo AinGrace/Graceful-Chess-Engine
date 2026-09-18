@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
 use parking_lot::Mutex;
-use types::chess_move::Move;
+use types::{chess_move::Move, score::Score};
 
-use crate::{eval::Score, search::Bound, tt::TTOptions::Enabled};
+use crate::{search::Bound, tt::TTOptions::Enabled};
 
 #[derive(Clone)]
 pub enum TTOptions {

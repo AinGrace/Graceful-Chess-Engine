@@ -1,107 +1,11 @@
-use std::{
-    fmt::Display,
-    ops::{Neg, Sub},
-};
-
-use lookup::{
-    MG_BISHOP_PST, BISHOP_VALUE, EG_KING_PST, MG_KING_PST, KING_PENALTY_FACTOR, MG_KNIGHT_PST, KNIGHT_VALUE, MG_PAWN_PST, PAWN_VALUE, MG_QUEEN_PST, QUEEN_VALUE, MG_ROOK_PST, ROOK_VALUE, piece_val,
-};
+use lookup::{KING_PENALTY_FACTOR, piece_val};
 use position::{board::Board, position::Position};
-use types::{color::Color, piece::Piece, role::Role, square::Square};
+use types::{bitboard::ToBitboard, color::Color, score::Score, square::Square};
 
 // TODO: compact this one
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Score {
-    Centipawn(i16),
-    Mate(i8),
-    Draw,
-    Abort,
-}
-
-impl Score {
-    pub fn value(self) -> i16 {
-        match self {
-            Score::Mate(val) if val > 0 => 10_000 - val as i16,
-            Score::Mate(val) => -10_000 - val as i16,
-            Score::Centipawn(val) => val,
-            Score::Draw => 0,
-            Score::Abort => 0,
-        }
-    }
-
-    pub fn step(self) -> Self {
-        match self {
-            Score::Mate(val) if val >= 0 => Self::Mate(val + 1),
-            Score::Mate(val) => Self::Mate(val - 1),
-            rest => rest,
-        }
-    }
-}
-
-impl PartialOrd for Score {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl Ord for Score {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.value().cmp(&other.value())
-    }
-}
-
-impl Neg for Score {
-    type Output = Self;
-
-    fn neg(self) -> Self::Output {
-        match self {
-            Score::Centipawn(val) => Score::Centipawn(-val),
-            Score::Mate(val) => Score::Mate(-val),
-            Score::Draw => Score::Draw,
-            Score::Abort => Score::Abort,
-        }
-    }
-}
-
-impl Sub for Score {
-    type Output = Self;
-
-    fn sub(self, rhs: Self) -> Self::Output {
-        Self::Centipawn(self.value() - rhs.value())
-    }
-}
-
-impl Sub<i16> for Score {
-    type Output = Self;
-
-    fn sub(self, rhs: i16) -> Self::Output {
-        Self::Centipawn(self.value() - rhs)
-    }
-}
-
-impl Display for Score {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}",
-            match self {
-                Score::Centipawn(val) => format!("cp {}", val),
-                Score::Mate(val) => format!("mate {}", val),
-                Score::Draw => format!("cp 0"),
-                Score::Abort => format!("ABORTED"),
-            }
-        )
-    }
-}
-
-impl Default for Score {
-    fn default() -> Self {
-        Self::Mate(-1)
-    }
-}
 
 pub fn static_eval(pos: &Position) -> Score {
-        if pos.is_checkmate() {
+    if pos.is_checkmate() {
         return Score::Mate(0);
     } else if pos.is_stalemate() {
         return Score::Draw;
@@ -110,7 +14,7 @@ pub fn static_eval(pos: &Position) -> Score {
     let mobility = mobility(pos);
     let tapered_score = pos.tapered_score();
 
-    let score = mobility + tapered_score;
+    let score = mobility + (tapered_score as i16);
 
     if pos.turn() == Color::White {
         Score::Centipawn(score)
@@ -133,7 +37,7 @@ pub fn eval_see(board: &mut Board, dest: Square, us: Color) -> i16 {
 
         let opponent_gain = eval_see(board, dest, !us);
 
-        eval = piece_val(defender) - opponent_gain;
+        eval = (piece_val(defender) - opponent_gain).max(0);
 
         let attacker = board.take_piece_at_checked(dest);
         board.set_piece_at(attacker, attk);
@@ -144,138 +48,35 @@ pub fn eval_see(board: &mut Board, dest: Square, us: Color) -> i16 {
 }
 
 fn mobility(pos: &Position) -> i16 {
-    let us = pos.legal_moves_for(pos.turn());
-    let them = pos.legal_moves_for(!pos.turn());
+    let board = pos.board();
+    let occupied = board.occupied().as_u64();
 
-    (us.len() as isize - them.len() as isize) as i16
-}
+    let mut score = 0i16;
 
-fn is_endgame(board: &Board) -> bool {
-    let pieces = board.non_king_pieces_of(Color::White) & board.non_king_pieces_of(Color::Black);
+    for color in [Color::White, Color::Black] {
+        let sign = if color == Color::White { 1 } else { -1 };
+        let own = board.by_color(color);
 
-    if pieces.popcnt() <= 4
-        || (material_score_of_white(board) < 1300 && material_score_of_black(board) < 1300)
-    {
-        true
-    } else {
-        false
+        for sq in board.knights(color) {
+            score += sign * (lookup::knight_attacks(sq).to_bb() & !own).popcnt() as i16;
+        }
+
+        for sq in board.bishops(color) {
+            score += sign * (lookup::bishop_attacks(sq, occupied).to_bb() & !own).popcnt() as i16;
+        }
+
+        for sq in board.rooks(color) {
+            score += sign * (lookup::rook_attacks(sq, occupied).to_bb() & !own).popcnt() as i16;
+        }
+
+        for sq in board.queens(color) {
+            score += sign * (lookup::queen_attacks(sq, occupied).to_bb() & !own).popcnt() as i16;
+        }
     }
-}
-
-#[rustfmt::skip]
-fn material_score_of_white(board: &Board) -> i16 {
-    let us = Color::White;
-
-    let pawns   = board.pawns(us);
-    let knights = board.knights(us);
-    let bishops = board.bishops(us);
-    let rooks   = board.rooks(us);
-    let queens  = board.queens(us);
-
-    let pawns_score   = pawns.popcnt()   as i16 * PAWN_VALUE;
-    let knights_score = knights.popcnt() as i16 * KNIGHT_VALUE;
-    let bishops_score = bishops.popcnt() as i16 * BISHOP_VALUE;
-    let rooks_score   = rooks.popcnt()   as i16 * ROOK_VALUE;
-    let queens_score  = queens.popcnt()  as i16 * QUEEN_VALUE;
-
-    pawns_score + knights_score + bishops_score + rooks_score + queens_score
-}
-
-#[rustfmt::skip]
-fn material_score_of_black(board: &Board) -> i16 {
-    let us = Color::Black;
-
-    let pawns   = board.pawns(us);
-    let knights = board.knights(us);
-    let bishops = board.bishops(us);
-    let rooks   = board.rooks(us);
-    let queens  = board.queens(us);
-
-    let pawns_score   = pawns.popcnt()   as i16 * PAWN_VALUE;
-    let knights_score = knights.popcnt() as i16 * KNIGHT_VALUE;
-    let bishops_score = bishops.popcnt() as i16 * BISHOP_VALUE;
-    let rooks_score   = rooks.popcnt()   as i16 * ROOK_VALUE;
-    let queens_score  = queens.popcnt()  as i16 * QUEEN_VALUE;
-
-    pawns_score + knights_score + bishops_score + rooks_score + queens_score
-}
-
-#[rustfmt::skip]
-fn material_score(board: &Board) -> i16 {
-    material_score_of_white(board) - material_score_of_black(board)
-}
-
-fn calculate_pst_score(board: &Board) -> i16 {
-    let white = Color::White;
-    let black = Color::Black;
-
-    let mut score = 0;
-
-    // ---- WHITE ----
-    board
-        .pawns(white)
-        .for_each(|pawn| score += piece_pst(&MG_PAWN_PST, pawn, white));
-
-    board
-        .knights(white)
-        .for_each(|knight| score += piece_pst(&MG_KNIGHT_PST, knight, white));
-
-    board
-        .bishops(white)
-        .for_each(|bishop| score += piece_pst(&MG_BISHOP_PST, bishop, white));
-
-    board
-        .rooks(white)
-        .for_each(|rook| score += piece_pst(&MG_ROOK_PST, rook, white));
-
-    board
-        .queens(white)
-        .for_each(|queen| score += piece_pst(&MG_QUEEN_PST, queen, white));
-
-    board.king(white).for_each(|king| {
-        if is_endgame(board) {
-            score += piece_pst(&EG_KING_PST, king, white);
-            score += king_dist_eval(board, white);
-        } else {
-            score += piece_pst(&MG_KING_PST, king, white);
-        }
-    });
-
-    // ---- BLACK ----
-    board
-        .pawns(black)
-        .for_each(|pawn| score += piece_pst(&MG_PAWN_PST, pawn, black));
-
-    board
-        .knights(black)
-        .for_each(|knight| score += piece_pst(&MG_KNIGHT_PST, knight, black));
-
-    board
-        .bishops(black)
-        .for_each(|bishop| score += piece_pst(&MG_BISHOP_PST, bishop, black));
-
-    board
-        .rooks(black)
-        .for_each(|rook| score += piece_pst(&MG_ROOK_PST, rook, black));
-
-    board
-        .queens(black)
-        .for_each(|queen| score += piece_pst(&MG_QUEEN_PST, queen, black));
-
-    board.king(black).for_each(|king| {
-        if is_endgame(board) {
-            score += piece_pst(&EG_KING_PST, king, white);
-            score += king_dist_eval(board, black);
-        } else {
-            score += piece_pst(&MG_KING_PST, king, white);
-        }
-    });
 
     score
 }
 
-/// in endgame where only a few pieces remain kings are encouraged to be close to each other
-///
 /// apply score penalty otherwise
 fn king_dist_eval(board: &Board, us: Color) -> i16 {
     let non_king_pieces =
@@ -295,13 +96,6 @@ fn king_dist_eval(board: &Board, us: Color) -> i16 {
         king_penalty
     } else {
         0
-    }
-}
-
-fn piece_pst(table: &[i16; 64], square: Square, side: Color) -> i16 {
-    match side {
-        Color::White => table[square.mirror_vertical().as_usize()],
-        Color::Black => -table[square.as_usize()],
     }
 }
 

@@ -65,13 +65,6 @@ static BISHOP_DATA: ([u64; BISHOP_TABLE_SIZE], [usize; 64]) = init_bishop_attack
 static BISHOP_ATTACKS: [u64; BISHOP_TABLE_SIZE] = BISHOP_DATA.0;
 static BISHOP_OFFSETS: [usize; 64] = BISHOP_DATA.1;
 
-/// assign 100 as default pawn value instead of 1 in order to avoid floating point calculations
-pub const PAWN_VALUE: i16 = 100;
-pub const KNIGHT_VALUE: i16 = 340;
-pub const BISHOP_VALUE: i16 = 350;
-pub const ROOK_VALUE: i16 = 500;
-pub const QUEEN_VALUE: i16 = 900;
-
 pub const KING_PENALTY_FACTOR: i16 = 70;
 
 pub const MAX_PHASE: u8 = 24;
@@ -241,21 +234,21 @@ impl Psqt {
         let mut mg = [[0i16; 64]; 12];
         let mut eg = [[0i16; 64]; 12];
         let mut role = 0;
-        while role < 6 {
+        while role < 12 {
             let mut sq = 0;
             while sq < 64 {
-                let white_idx = role * 2; // white pieces at even indices
-                let black_idx = role * 2 + 1; // black pieces at odd indices
                 let mirrored_sq = sq ^ 56; // flip rank for black
 
                 let (m_mg, m_eg) = piece_pst(role, sq);
                 let (e_mg, e_eg) = piece_pst(role, mirrored_sq);
 
-                mg[white_idx][sq] = MATERIAL_MG[role] + m_mg;
-                eg[white_idx][sq] = MATERIAL_EG[role] + m_eg;
-
-                mg[black_idx][sq] = MATERIAL_MG[role] + e_mg;
-                eg[black_idx][sq] = MATERIAL_EG[role] + e_eg;
+                if role > 5 {
+                    mg[role][sq] = material_lookup(role, MATERIAL_MG) + e_mg;
+                    eg[role][sq] = material_lookup(role, MATERIAL_EG) + e_eg;
+                } else {
+                    mg[role][sq] = material_lookup(role, MATERIAL_MG) + m_mg;
+                    eg[role][sq] = material_lookup(role, MATERIAL_EG) + m_eg;
+                }
 
                 sq += 1;
             }
@@ -267,7 +260,13 @@ impl Psqt {
 
 // ------------------------------------------- //
 
-// TODO: revisit later
+/// assign 100 as default pawn value instead of 1 in order to avoid floating point calculations
+pub const PAWN_VALUE: i16 = 100;
+pub const KNIGHT_VALUE: i16 = 340;
+pub const BISHOP_VALUE: i16 = 350;
+pub const ROOK_VALUE: i16 = 500;
+pub const QUEEN_VALUE: i16 = 900;
+
 pub fn piece_val(piece: Piece) -> i16 {
     match piece.role() {
         Role::Pawn => PAWN_VALUE,
@@ -279,14 +278,26 @@ pub fn piece_val(piece: Piece) -> i16 {
     }
 }
 
+const fn material_lookup(role: usize, table: [i16; 6]) -> i16 {
+    return match role {
+        0 | 6 => table[0],
+        1 | 7 => table[1],
+        2 | 8 => table[2],
+        3 | 9 => table[3],
+        4 | 10 => table[4],
+        5 | 11 => table[5],
+        _ => unsafe { unreachable_unchecked() },
+    };
+}
+
 const fn piece_pst(role: usize, sqr: usize) -> (i16, i16) {
     return match role {
-        0 => (MG_PAWN_PST[sqr], EG_PAWN_PST[sqr]),
-        1 => (MG_KNIGHT_PST[sqr], EG_KNIGHT_PST[sqr]),
-        2 => (MG_BISHOP_PST[sqr], EG_BISHOP_PST[sqr]),
-        3 => (MG_ROOK_PST[sqr], EG_ROOK_PST[sqr]),
-        4 => (MG_QUEEN_PST[sqr], EG_QUEEN_PST[sqr]),
-        5 => (MG_KING_PST[sqr], EG_KING_PST[sqr]),
+        0 | 6 => (MG_PAWN_PST[sqr], EG_PAWN_PST[sqr]),
+        1 | 7 => (MG_KNIGHT_PST[sqr], EG_KNIGHT_PST[sqr]),
+        2 | 8 => (MG_BISHOP_PST[sqr], EG_BISHOP_PST[sqr]),
+        3 | 9 => (MG_ROOK_PST[sqr], EG_ROOK_PST[sqr]),
+        4 | 10 => (MG_QUEEN_PST[sqr], EG_QUEEN_PST[sqr]),
+        5 | 11 => (MG_KING_PST[sqr], EG_KING_PST[sqr]),
         _ => unsafe { unreachable_unchecked() },
     };
 }

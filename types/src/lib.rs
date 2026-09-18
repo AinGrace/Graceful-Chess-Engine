@@ -14,6 +14,7 @@ pub mod piece;
 pub mod rank;
 pub mod role;
 pub mod square;
+pub mod score;
 
 /// General use move list
 pub type MoveList = ArrayVec<Move, 218>;
