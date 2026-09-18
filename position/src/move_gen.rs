@@ -15,6 +15,7 @@ use types::{
 
 use crate::{board::Board, move_gen::pin_info::PinInfo, position::Position};
 
+#[inline(always)]
 pub fn gen_legal_moves_for_v2<const CAPTURES_ONLY: bool>(pos: &Position, color: Color) -> MoveList {
     let mut moves = MoveList::new();
     let mut on_move = |mv| unsafe { moves.push_unchecked(mv) };
@@ -28,6 +29,7 @@ pub fn gen_legal_moves_for_v2<const CAPTURES_ONLY: bool>(pos: &Position, color: 
     moves
 }
 
+#[inline(always)]
 unsafe fn gen_legal_moves_white<const CAPTURES_ONLY: bool>(
     pos: &Position,
     on_move: &mut impl FnMut(Move),
@@ -58,6 +60,7 @@ unsafe fn gen_legal_moves_white<const CAPTURES_ONLY: bool>(
     gen_white_ep_moves(pos, king_sqr, on_move);
 }
 
+#[inline(always)]
 fn gen_white_ep_moves(pos: &Position, king_sqr: Square, on_move: &mut impl FnMut(Move)) {
     let Some(ep) = pos.ep_square() else {
         return;
@@ -113,6 +116,7 @@ fn gen_white_ep_moves(pos: &Position, king_sqr: Square, on_move: &mut impl FnMut
     });
 }
 
+#[inline(always)]
 fn gen_white_castling_moves<const CAPTURES_ONLY: bool>(
     board: &Board,
     king_sqr: Square,
@@ -155,6 +159,7 @@ fn gen_white_castling_moves<const CAPTURES_ONLY: bool>(
     }
 }
 
+#[inline(always)]
 fn gen_white_moves<const CAPTURES_ONLY: bool>(
     board: &Board,
     pin_info: &PinInfo,
@@ -418,6 +423,7 @@ fn gen_white_moves<const CAPTURES_ONLY: bool>(
     });
 }
 
+#[inline(always)]
 fn gen_white_evasion_moves<const CAPTURES_ONLY: bool>(
     board: &Board,
     king_sqr: Square,
@@ -731,6 +737,7 @@ fn white_passant_pin_mask(
     }
 }
 
+#[inline(always)]
 fn gen_white_king_moves<const CAPTURES_ONLY: bool>(
     board: &Board,
     king_sqr: Square,
@@ -766,6 +773,7 @@ fn gen_white_king_moves<const CAPTURES_ONLY: bool>(
     });
 }
 
+#[inline(always)]
 unsafe fn gen_legal_moves_black<const CAPTURES_ONLY: bool>(
     pos: &Position,
     on_move: &mut impl FnMut(Move),
@@ -796,6 +804,7 @@ unsafe fn gen_legal_moves_black<const CAPTURES_ONLY: bool>(
     gen_black_ep_moves(pos, king_sqr, on_move);
 }
 
+#[inline(always)]
 fn gen_black_king_moves<const CAPTURES_ONLY: bool>(
     board: &Board,
     king_sqr: Square,
@@ -808,10 +817,26 @@ fn gen_black_king_moves<const CAPTURES_ONLY: bool>(
 
     let quiet = attacks & !friendly & !enemy;
 
+    let us = Color::Black;
+
+    let queens = board.w_queens();
+    let pawns = board.w_pawns();
+    let knights = board.w_knights();
+    let bishops = board.w_bishops() | queens;
+    let rooks = board.w_rooks() | queens;
+    let king = board.w_king();
+
     if CAPTURES_ONLY {
         let captures = attacks & enemy;
         captures.for_each(|to| {
-            if black_king_move_is_safe(board, king_sqr, to) {
+            let occupied = board.occupied().clear_square(king_sqr).set_square(to);
+
+            if (lookup::pawn_attacks(us, to).to_bb() & pawns).empty()
+                && (lookup::knight_attacks(to).to_bb() & knights).empty()
+                && (lookup::bishop_attacks(to, occupied.as_u64()).to_bb() & bishops).empty()
+                && (lookup::rook_attacks(to, occupied.as_u64()).to_bb() & rooks).empty()
+                && (lookup::king_attacks(to).to_bb() & king).empty()
+            {
                 on_move(Move::capture(king_sqr, to));
             }
         });
@@ -820,18 +845,33 @@ fn gen_black_king_moves<const CAPTURES_ONLY: bool>(
 
     let captures = attacks & enemy;
     captures.for_each(|to| {
-        if black_king_move_is_safe(board, king_sqr, to) {
+        let occupied = board.occupied().clear_square(king_sqr).set_square(to);
+
+        if (lookup::pawn_attacks(us, to).to_bb() & pawns).empty()
+            && (lookup::knight_attacks(to).to_bb() & knights).empty()
+            && (lookup::bishop_attacks(to, occupied.as_u64()).to_bb() & bishops).empty()
+            && (lookup::rook_attacks(to, occupied.as_u64()).to_bb() & rooks).empty()
+            && (lookup::king_attacks(to).to_bb() & king).empty()
+        {
             on_move(Move::capture(king_sqr, to));
         }
     });
 
     quiet.for_each(|to| {
-        if black_king_move_is_safe(board, king_sqr, to) {
+        let occupied = board.occupied().clear_square(king_sqr).set_square(to);
+
+        if (lookup::pawn_attacks(us, to).to_bb() & pawns).empty()
+            && (lookup::knight_attacks(to).to_bb() & knights).empty()
+            && (lookup::bishop_attacks(to, occupied.as_u64()).to_bb() & bishops).empty()
+            && (lookup::rook_attacks(to, occupied.as_u64()).to_bb() & rooks).empty()
+            && (lookup::king_attacks(to).to_bb() & king).empty()
+        {
             on_move(Move::quiet(king_sqr, to));
         }
     });
 }
 
+#[inline(always)]
 fn gen_black_ep_moves(pos: &Position, king_sqr: Square, on_move: &mut impl FnMut(Move)) {
     let Some(ep) = pos.ep_square() else {
         return;
@@ -887,6 +927,7 @@ fn gen_black_ep_moves(pos: &Position, king_sqr: Square, on_move: &mut impl FnMut
     });
 }
 
+#[inline(always)]
 fn gen_black_castling_moves<const CAPTURES_ONLY: bool>(
     board: &Board,
     king_sqr: Square,
@@ -929,6 +970,7 @@ fn gen_black_castling_moves<const CAPTURES_ONLY: bool>(
     }
 }
 
+#[inline(always)]
 fn gen_black_moves<const CAPTURES_ONLY: bool>(
     board: &Board,
     pin_info: &PinInfo,
@@ -1192,6 +1234,7 @@ fn gen_black_moves<const CAPTURES_ONLY: bool>(
     });
 }
 
+#[inline(always)]
 fn gen_black_evasion_moves<const CAPTURES_ONLY: bool>(
     board: &Board,
     king_sqr: Square,
@@ -1477,6 +1520,7 @@ fn gen_black_evasion_moves<const CAPTURES_ONLY: bool>(
     }
 }
 
+#[inline(always)]
 fn black_passant_pin_mask(
     board: &Board,
     king_sqr: Square,
@@ -1505,6 +1549,8 @@ fn black_passant_pin_mask(
         true
     }
 }
+
+#[inline(always)]
 fn white_king_move_is_safe(board: &Board, from: Square, to: Square) -> bool {
     let us = Color::White;
 
@@ -1524,6 +1570,7 @@ fn white_king_move_is_safe(board: &Board, from: Square, to: Square) -> bool {
         && (lookup::king_attacks(to).to_bb() & king).empty()
 }
 
+#[inline(always)]
 fn black_king_move_is_safe(board: &Board, from: Square, to: Square) -> bool {
     let us = Color::Black;
 
@@ -1565,6 +1612,7 @@ mod pin_info {
 
     impl PinInfo {
         // SAFETY: It's caller's responsibility to ensure that the entry for requested `Square` has been set
+        #[inline(always)]
         pub unsafe fn ray_of_unchecked(&self, square: Square) -> Bitboard {
             for i in 0..self.len as usize {
                 if unsafe { self.squares.get_unchecked(i).assume_init() } == square {
@@ -1596,6 +1644,7 @@ mod pin_info {
             self.r_pins
         }
 
+        #[inline(always)]
         pub fn compute(pos: &Position, us: Color) -> Self {
             let them = !us;
 

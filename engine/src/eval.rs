@@ -4,6 +4,7 @@ use types::{bitboard::ToBitboard, color::Color, score::Score, square::Square};
 
 // TODO: compact this one
 
+#[inline(always)]
 pub fn static_eval(pos: &Position) -> Score {
     if pos.is_checkmate() {
         return Score::Mate(0);
@@ -23,7 +24,7 @@ pub fn static_eval(pos: &Position) -> Score {
     }
 }
 
-// TODO
+#[inline(always)]
 pub fn eval_see(board: &mut Board, dest: Square, us: Color) -> i16 {
     let mut eval = 0;
 
@@ -47,6 +48,7 @@ pub fn eval_see(board: &mut Board, dest: Square, us: Color) -> i16 {
     eval
 }
 
+#[inline(always)]
 fn mobility(pos: &Position) -> i16 {
     let board = pos.board();
     let occupied = board.occupied().as_u64();
@@ -109,6 +111,14 @@ mod tests {
     fn pos_from_fen(fen: &str) -> Position {
         let fen = fen.parse::<Fen>().expect("valid FEN");
         Position::from_fen(fen).expect("valid position")
+    }
+
+    #[test]
+    fn static_eval_example() {
+        let pos = Position::new();
+        let eval = static_eval(&pos);
+
+        dbg!(eval);
     }
 
     mod see {

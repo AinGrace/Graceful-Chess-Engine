@@ -12,7 +12,7 @@ use position::position::Position;
 use types::{chess_move::Move, score::Score};
 
 use crate::{
-    eval::{self},
+    eval::{self, static_eval},
     mvv_lva,
     time_control::TimeControl,
     tt::TTOptions,
@@ -242,6 +242,7 @@ fn negamax(
     let mut bound = Bound::Upper;
 
     if depth == 0 {
+        // return NegamaxResult { score: static_eval(pos), best_move: None, nodes: *nodes }
         return quiesce(pos, 7, tt_opts, alpha, beta, stop_flag, time_control, nodes);
     }
 
@@ -302,7 +303,7 @@ fn negamax(
             nodes,
         );
 
-        // SAFETY: undo is produced by 
+        // SAFETY: undo is produced by
         unsafe { pos.undo_move(undo) };
 
         if matches!(search_result.score, Score::Abort) {
@@ -377,7 +378,7 @@ fn quiesce(
             Bound::Upper => beta = min(beta, entry.score),
         }
 
-        if alpha > beta {
+        if alpha >= beta {
             return NegamaxResult::new(entry.score, tt_move, *nodes);
         }
     }
@@ -409,6 +410,7 @@ fn quiesce(
 
     let mut best_move = None;
     let mut scored_moves = mvv_lva::score_moves(pos.board(), moves, tt_move);
+    let mut board = pos.board_owned();
 
     for i in 0..scored_moves.len() {
         mvv_lva::bubble_high_scored_move(&mut scored_moves, i);
@@ -417,7 +419,6 @@ fn quiesce(
         if !in_check {
             let see_score = {
                 let turn = pos.turn();
-                let mut board = pos.board_owned();
 
                 eval::eval_see(&mut board, current_move.to(), turn)
             };
@@ -432,7 +433,7 @@ fn quiesce(
                 continue;
             }
         }
- 
+
         //SAFETY: current_move is part of legal MoveList
         let undo = unsafe { pos.do_move_unchecked(current_move) };
         *nodes += 1;

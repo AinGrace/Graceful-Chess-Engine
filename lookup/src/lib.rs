@@ -224,27 +224,28 @@ pub static MATERIAL_EG: [i16; 6] = [94, 281, 297, 512, 936, 0];
 
 pub static PSQT: Psqt = Psqt::init();
 
+#[derive(Debug)]
 pub struct Psqt {
-    pub mg: [[i16; 64]; 12],
-    pub eg: [[i16; 64]; 12],
+    mg: [[i16; 64]; 12],
+    eg: [[i16; 64]; 12],
 }
 
 impl Psqt {
     const fn init() -> Self {
         let mut mg = [[0i16; 64]; 12];
         let mut eg = [[0i16; 64]; 12];
+
         let mut role = 0;
         while role < 12 {
             let mut sq = 0;
             while sq < 64 {
-                let mirrored_sq = sq ^ 56; // flip rank for black
+                let table_idx = if role > 5 { sq } else { sq ^ 56 };
 
-                let (m_mg, m_eg) = piece_pst(role, sq);
-                let (e_mg, e_eg) = piece_pst(role, mirrored_sq);
+                let (m_mg, m_eg) = piece_pst(role, table_idx);
 
                 if role > 5 {
-                    mg[role][sq] = material_lookup(role, MATERIAL_MG) + e_mg;
-                    eg[role][sq] = material_lookup(role, MATERIAL_EG) + e_eg;
+                    mg[role][sq] = material_lookup(role, MATERIAL_MG) + m_mg;
+                    eg[role][sq] = material_lookup(role, MATERIAL_EG) + m_eg;
                 } else {
                     mg[role][sq] = material_lookup(role, MATERIAL_MG) + m_mg;
                     eg[role][sq] = material_lookup(role, MATERIAL_EG) + m_eg;
@@ -255,6 +256,16 @@ impl Psqt {
             role += 1;
         }
         Psqt { mg, eg }
+    }
+
+    pub fn mg(&self, piece: Piece, sqr: usize) -> i16 {
+        let piece = piece.as_usize();
+        self.mg[piece][sqr]
+    }
+
+    pub fn eg(&self, piece: Piece, sqr: usize) -> i16 {
+        let piece = piece.as_usize();
+        self.eg[piece][sqr]
     }
 }
 
@@ -839,16 +850,9 @@ const fn deposit_bits(mut subset: u64, mut mask: u64) -> u64 {
     res
 }
 
-#[cfg(not(miri))]
 #[target_feature(enable = "bmi2")]
 unsafe fn pext(value: u64, mask: u64) -> u64 {
     _pext_u64(value, mask)
-}
-
-#[inline(always)]
-#[cfg(miri)]
-fn pext(value: u64, mask: u64) -> u64 {
-    pext_const(value, mask)
 }
 
 /// a software level emulation of PEXT bmi2 instruction that can be used in const context
@@ -868,4 +872,29 @@ pub const fn pext_const(value: u64, mut mask: u64) -> u64 {
     }
 
     result
+}
+
+#[cfg(test)]
+mod tests {
+
+    use super::*;
+
+    #[test]
+    fn psqt_mirror_symmetry_test() {
+        for role in 0..6 {
+            for sq in 0..64 {
+                let mirrored = sq ^ 56;
+                let white_idx = role; // adjust to however Piece::as_usize() actually orders White roles
+                let black_idx = role + 6; // and Black roles
+                assert_eq!(
+                    PSQT.mg[white_idx][sq], PSQT.mg[black_idx][mirrored],
+                    "role {role}, sq {sq}: white/black mirror mismatch"
+                );
+                assert_eq!(
+                    PSQT.eg[white_idx][sq], PSQT.eg[black_idx][mirrored],
+                    "role {role}, sq {sq}: white/black mirror mismatch (eg)"
+                );
+            }
+        }
+    }
 }

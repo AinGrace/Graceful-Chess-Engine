@@ -9,19 +9,19 @@ use crate::{fen::Fen, position::Position};
 #[test]
 #[ignore = "to be onvoked manually for debugging"]
 fn perft_comparing() {
-    let mut pos = Position::new();
-    pos.uci_moves_checked(
-        "
-            e2e4 e7e5 b1c3 g8f6 g1f3 d7d6 d2d4 b8d7 c1g5
-            f8e7 f1b5 a7a6 g5f6 e7f6 b5d7 d8d7 c3d5 d7d8
-            d4e5 f6e5 d1b1 f7f6 h1f1 e8g8 h2h3 c8e6 d5b4
-            d8e8 g2g3 e8f7 f1h1 f7h5 f3e5 h5e5 c2c3 a8e8
-            b1d3 e5h5 g3g4 e6g4 b4d5 g4f3 d5f4 f3e4 f4h5
-            e4d3 e1d2 d3g6 h5f4 g6e4 h1e1 g8f7 c3c4 e8e5
-            c4c5 g7g5 f4d3 e4d3 d2d3 f8d8 c5d6 e5d5",
-    );
+    // let mut pos = Position::new();
+    // pos.uci_moves_checked(
+    //     "
+    //         e2e4 e7e5 b1c3 g8f6 g1f3 d7d6 d2d4 b8d7 c1g5
+    //         f8e7 f1b5 a7a6 g5f6 e7f6 b5d7 d8d7 c3d5 d7d8
+    //         d4e5 f6e5 d1b1 f7f6 h1f1 e8g8 h2h3 c8e6 d5b4
+    //         d8e8 g2g3 e8f7 f1h1 f7h5 f3e5 h5e5 c2c3 a8e8
+    //         b1d3 e5h5 g3g4 e6g4 b4d5 g4f3 d5f4 f3e4 f4h5
+    //         e4d3 e1d2 d3g6 h5f4 g6e4 h1e1 g8f7 c3c4 e8e5
+    //         c4c5 g7g5 f4d3 e4d3 d2d3 f8d8 c5d6 e5d5",
+    // );
 
-    let fen = pos.to_fen();
+    // let fen = pos.to_fen();
 
     let raw_fen = "3r4/1pp2k1p/p2P1p2/3r2p1/8/3K3P/PP3P2/R3R3 w - - 1 32";
     let fen: Fen = raw_fen.parse().unwrap();
